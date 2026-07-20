@@ -56,9 +56,10 @@ The framework is divided into five core algorithmic families, all accessible out
 
 ## 📦 Installation
 
+To install the latest version directly from GitHub, run:
+
 ```bash
-cd omnitabular
-pip install -e .
+pip install git+https://github.com/kaarse/omnitabular.git
 ```
 
 ---
