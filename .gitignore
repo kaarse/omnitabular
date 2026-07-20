@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specific
+build/
+dist/
+*.egg-info/
+catboost_info/
+
+# Node
+node_modules/
+website/node_modules/
+website_old/node_modules/
+website/out/
+website/.next/

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="OmniTabular - The Ultimate Tabular ML Framework with 32+ Architectures and Auto Ensemble Optimization.">
+    <title>OmniTabular | Advanced Tabular ML Framework</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="blob-bg">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <nav class="navbar glass">
+        <div class="logo">OmniTabular</div>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#architectures">Architectures</a></li>
+            <li><a href="#documentation">Documentation</a></li>
+            <li><a href="api.html">API Reference</a></li>
+            <li><a href="https://github.com/omnitabular/omnitabular" target="_blank" class="btn primary-btn">GitHub</a></li>
+        </ul>
+    </nav>
+
+    <header class="hero">
+        <h1 class="hero-title">The Ultimate <br><span class="gradient-text">Tabular ML</span> Framework.</h1>
+        <p class="hero-subtitle">Seamlessly ensemble 32 state-of-the-art architectures using stochastic Hill Climbing optimization. Zero manual tuning required.</p>
+        
+        <div class="code-terminal glass">
+            <div class="terminal-header">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+            </div>
+            <pre><code class="language-python"><span class="keyword">from</span> omnitabular <span class="keyword">import</span> OmniTabular
+<span class="keyword">from</span> sklearn.datasets <span class="keyword">import</span> load_breast_cancer
+
+X, y = load_breast_cancer(return_X_y=<span class="boolean">True</span>)
+
+<span class="comment"># Train 32 models & optimize weights</span>
+model = OmniTabular(task=<span class="string">"classification"</span>, verbose=<span class="boolean">True</span>)
+model.fit(X, y)
+
+<span class="function">print</span>(model.leaderboard())</code></pre>
+            <button class="copy-btn" id="copy-btn">Copy</button>
+        </div>
+    </header>
+
+    <section id="features" class="features-section">
+        <h2 class="section-title">Why OmniTabular?</h2>
+        <div class="features-grid">
+            <div class="feature-card glass reveal">
+                <div class="feature-icon">🧩</div>
+                <h3>32 Architectures</h3>
+                <p>Native support for Gradient Boosting, Deep NNs, Transformers, CNNs, LSTMs, Graph Nets, and Rule-based models.</p>
+            </div>
+            <div class="feature-card glass reveal">
+                <div class="feature-icon">⛰️</div>
+                <h3>Hill Climbing</h3>
+                <p>Stochastic weight search on OOF predictions with thermodynamic annealing to find the perfect ensemble blend.</p>
+            </div>
+            <div class="feature-card glass reveal">
+                <div class="feature-icon">🚀</div>
+                <h3>Zero-Config API</h3>
+                <p>Call .fit() and automatically evaluate, rank, and blend all compatible models mathematically.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="architectures" class="architecture-section">
+        <h2 class="section-title">Supported Architectures</h2>
+        <div class="arch-container">
+            <div class="arch-group glass reveal">
+                <h3>🌲 Tree Ensembles & Classics</h3>
+                <ul>
+                    <li>LightGBM, XGBoost, CatBoost</li>
+                    <li>Random Forest, Extra Trees</li>
+                    <li>SVM, Linear Regression, KNN</li>
+                </ul>
+            </div>
+            <div class="arch-group glass reveal">
+                <h3>🧠 Deep Neural Networks</h3>
+                <ul>
+                    <li>TabNet, NODE, TreeNN</li>
+                    <li>Tabular Factorization Machines</li>
+                    <li>Multi-Layer Perceptrons</li>
+                </ul>
+            </div>
+            <div class="arch-group glass reveal">
+                <h3>🧬 Evolutionary & Rule-Based</h3>
+                <ul>
+                    <li>Simulated Annealing, Genetic Algo</li>
+                    <li>Symbolic Regression (GP)</li>
+                    <li>RuleFit, RIPPER, PRE</li>
+                </ul>
+            </div>
+            <div class="arch-group glass reveal">
+                <h3>🕸️ Sequences & Graphs</h3>
+                <ul>
+                    <li>FT-Transformer, SAINT</li>
+                    <li>LSTMs, GRUs, 1D/2D CNNs</li>
+                    <li>Graph Neural Networks</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section id="documentation" class="docs-section">
+        <h2 class="section-title">Documentation</h2>
+        <div class="docs-container glass reveal">
+            <h3>Installation</h3>
+            <div class="code-terminal docs-terminal">
+                <pre><code>git clone https://github.com/omnitabular/omnitabular.git
+cd omnitabular
+pip install -e .</code></pre>
+            </div>
+
+            <h3>API parameters</h3>
+            <p>Initialize <strong><code>OmniTabular()</code></strong> dynamically configures the ensemble environment.</p>
+            <div class="table-responsive">
+                <table class="docs-table">
+                    <thead>
+                        <tr>
+                            <th>Argument</th>
+                            <th>Target Mapping</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>task</code></td>
+                            <td>Can manually set <code>"classification"</code>, <code>"regression"</code>, or defer to <code>"auto"</code> target scanning.</td>
+                        </tr>
+                        <tr>
+                            <td><code>[model]_params</code></td>
+                            <td>Apply hyperparameter dictionary overwrites (e.g., <code>lgb_params={"n_estimators": 100}</code>, <code>rf_params={"max_depth": 7}</code>)</td>
+                        </tr>
+                        <tr>
+                            <td><code>hc_params</code></td>
+                            <td>Configure the stochastic Hill Climbing solver configuration (e.g. <code>{"n_iterations": 100}</code>).</td>
+                        </tr>
+                        <tr>
+                            <td><code>cv_folds</code></td>
+                            <td>Define how many OOF (Out of Fold) segments the initial data pool receives (default = 5).</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Core Methods</h3>
+            <ul class="methods-list">
+                <li><span class="method-badge">model.fit(X, y)</span> Builds independent out-of-fold instances, scores local metrics, then optimizes terminal weights across standard models.</li>
+                <li><span class="method-badge">model.predict(X)</span> Forward-passes array mappings using terminal OOF-computed ensemble weights.</li>
+                <li><span class="method-badge">model.leaderboard()</span> Outputs standard Pandas DataFrame visualizing internal metric evaluations ranking architecture accuracy.</li>
+            </ul>
+        </div>
+    </section>
+
+    <footer class="footer glass">
+        <p>Built with ❤️ and Math implicitly in PyTorch. © 2026 OmniTabular ML</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
