@@ -34,6 +34,12 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: /omnitabular
         run: npm run build
         working-directory: ./website
+      - name: Verify static routes
+        run: |
+          test -f out/index.html
+          test -f out/dashboard/index.html
+          test -f out/api-reference/index.html
+        working-directory: ./website
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

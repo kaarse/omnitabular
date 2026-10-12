@@ -25,6 +25,10 @@ The GitHub Pages workflow sets these variables automatically. A deployed
 website needs a reachable HTTPS API URL; localhost refers to the visitor's
 computer.
 
+Static exports use trailing slashes and generate a directory `index.html` for
+each route so GitHub Pages can serve direct links and refreshes, including
+`/omnitabular/dashboard/` and `/omnitabular/api-reference/`.
+
 
 ## Documentation updates
 

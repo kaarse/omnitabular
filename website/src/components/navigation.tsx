@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 export function Navigation() {
-  const pathname = usePathname();
+  const pathname = usePathname().replace(/\/$/, "") || "/";
   return (
     <nav className="navbar glass" aria-label="Main navigation">
       <Link className="logo" href="/">OmniTabular</Link>
