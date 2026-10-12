@@ -1,5 +1,21 @@
 # Troubleshooting
 
+## pip cannot find OmniTabular
+
+`pip install omnitabular` searches your configured package index. The project must be published there before this command can work; changing capitalization does not fix it. Until the first PyPI release, install directly from GitHub:
+
+```bash
+python -m pip install git+https://github.com/kaarse/omnitabular.git
+```
+
+Or, from a local checkout in a virtual environment:
+
+```bash
+python -m pip install .
+```
+
+Use Python 3.9 or newer. Paste only the command into your shell: including the `ERROR: ... (from versions: none)` output in the command causes a separate shell syntax error. Maintainers can follow [the publishing instructions](publishing.md) to enable installation by package name.
+
 ## The dashboard cannot reach the API
 
 Start the service from the repository root with `python -m uvicorn api.main:app --port 8080`. Check `http://localhost:8080/ping`. The website defaults to that local API; set `NEXT_PUBLIC_API_URL` before starting or building to change it.

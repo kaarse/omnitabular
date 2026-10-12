@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnitabular"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Tabular ML framework with 32 models and optimized weighted ensembling"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,6 +26,9 @@ api = ["fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["omnitabular*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "omnitabular.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

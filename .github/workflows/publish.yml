@@ -3,24 +3,88 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-publish:
+  build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
+    - name: Check release version
+      if: github.event_name == 'release'
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        python - <<'PY'
+        import ast
+        import os
+        from pathlib import Path
+
+        module = ast.parse(Path("omnitabular/__init__.py").read_text())
+        version = next(
+            ast.literal_eval(node.value)
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+        )
+        tag = os.environ["RELEASE_TAG"]
+        if tag not in (version, f"v{version}"):
+            raise SystemExit(f"Release tag {tag!r} must match package version {version!r}")
+        PY
     - name: Install PyPA build tools
       run: |
         python -m pip install --upgrade pip
-        pip install build twine
+        python -m pip install build twine
     - name: Build Source and Wheel Distribution
       run: python -m build
-    - name: Publish to PyPI
+    - name: Validate distributions
+      run: python -m twine check --strict dist/*
+    - name: Install and smoke test the wheel outside the checkout
+      run: |
+        python -m pip install dist/*.whl
+        cd "$RUNNER_TEMP"
+        python - <<'PY'
+        from importlib.metadata import version
+        import omnitabular
+        from omnitabular import OmniTabular
+
+        assert version("omnitabular") == omnitabular.__version__
+        assert OmniTabular.available_models()
+        PY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python-distributions
+        path: dist/
+        if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/omnitabular/
+    permissions:
+      id-token: write
+    env:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: python-distributions
+        path: dist/
+    - name: Publish with configured API token
+      if: env.PYPI_API_TOKEN != ''
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         user: __token__
         password: ${{ secrets.PYPI_API_TOKEN }}
+    - name: Publish with PyPI Trusted Publishing
+      if: env.PYPI_API_TOKEN == ''
+      uses: pypa/gh-action-pypi-publish@release/v1

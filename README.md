@@ -6,6 +6,8 @@ It includes 32 model options for classification and 31 for regression, a local C
 
 ## Install
 
+The package is not yet published on PyPI. Until the first release is uploaded, `pip install omnitabular` reports “No matching distribution found”. Install through pip from GitHub using the command below, or run `python -m pip install .` from a local checkout.
+
 Python 3.9+ is supported; Python 3.10+ is recommended. Create a virtual environment first:
 
 ```bash
@@ -150,4 +152,4 @@ npm run build
 
 The integration suite trains all model families and can take several minutes. API tests require the `api` extra. To update generated website API defaults and method names after changing Python signatures, run `python scripts/build_docs.py` from the repository root. The generator uses Python's standard library and preserves the hand-written website guides.
 
-See [website setup](website/README.md) and [troubleshooting](docs/troubleshooting.md).
+See [website setup](website/README.md), [troubleshooting](docs/troubleshooting.md), and [publishing releases to PyPI](docs/publishing.md).
