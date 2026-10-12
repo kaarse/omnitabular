@@ -1,306 +1,92 @@
 "use client";
-import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud, FileType, AlertCircle, Play, ChevronRight, Activity, Cpu } from 'lucide-react';
 
-type TrainingResult = {
-  task: string;
-  ensemble_oof_score: number;
-  weights: Record<string, number>;
-};
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { parseCsvHeader } from "@/lib/csv";
+
+type Result = { task: "classification" | "regression"; ensemble_oof_score: number; weights: Record<string, number> };
+type Task = "auto" | "classification" | "regression";
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/$/, "");
 
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
-  const [targetCol, setTargetCol] = useState<string>('');
-  
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'training' | 'success' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
-  
-  const [result, setResult] = useState<TrainingResult | null>(null);
-  
-  // Terminal logs state
-  const [logs, setLogs] = useState<{time: string, msg: string, type: 'info'|'success'|'warn'}[]>([]);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [target, setTarget] = useState("");
+  const [task, setTask] = useState<Task>("auto");
+  const [status, setStatus] = useState<"idle" | "reading" | "training" | "success" | "error">("idle");
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<Result | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const selection = useRef(0);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => { selection.current++; request.current?.abort(); }, []);
+  const busy = status === "reading" || status === "training";
 
-  const addLog = (msg: string, type: 'info'|'success'|'warn' = 'info') => {
-    const time = new Date().toISOString().split('T')[1].substring(0, 12);
-    setLogs(prev => [...prev, { time, msg, type }]);
-  };
-
-  useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs]);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.currentTarget.classList.add('active');
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.currentTarget.classList.remove('active');
-  };
-
-  const processFile = (selected: File) => {
-    setStatus('idle');
-    setErrorMsg('');
-    setResult(null);
-    setColumns([]);
-    setTargetCol('');
-    if (!selected.name.toLowerCase().endsWith('.csv')) {
-      setErrorMsg('Please select a CSV file.');
-      setStatus('error');
-      return;
-    }
-    setFile(selected);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const firstLine = text.replace(/^\uFEFF/, '').split(/\r?\n/)[0];
-      if (firstLine) {
-        const cols: string[] = [];
-        let value = '', quoted = false;
-        for (let i = 0; i < firstLine.length; i++) {
-          const char = firstLine[i];
-          if (char === '"') {
-            if (quoted && firstLine[i + 1] === '"') { value += '"'; i++; }
-            else quoted = !quoted;
-          } else if (char === ',' && !quoted) { cols.push(value); value = ''; }
-          else value += char;
-        }
-        cols.push(value);
-        setColumns(cols);
-        setTargetCol(cols[cols.length - 1]);
-      }
-    };
-    reader.onerror = () => {
-      setErrorMsg('Could not read the selected file.');
-      setStatus('error');
-    };
-    reader.readAsText(selected.slice(0, 65536));
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.currentTarget.classList.remove('active');
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024, dm = 2, sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  };
-
-  const handleTrain = async () => {
-    if (!file || !targetCol) return;
-    setStatus('training');
-    setResult(null);
-    setErrorMsg('');
-    setLogs([]);
-    addLog('Uploading dataset and waiting for cross-validation and ensemble training...');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('target_col', targetCol);
-    formData.append('task', 'auto');
-
+  async function selectFile(selected: File) {
+    if (busy) return;
+    const version = ++selection.current;
+    setResult(null); setError(""); setColumns([]); setTarget(""); setFile(null);
     try {
-      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/$/, '')}/train_upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.detail || 'Training failed on server.');
-      }
-      
-      setResult(data);
-      addLog('Training complete. Results received from the server.', 'success');
-      setStatus('success');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Training failed.';
-      addLog(message, 'warn');
-      setErrorMsg(message);
-      setStatus('error');
+      if (!selected.name.toLowerCase().endsWith(".csv")) throw new Error("Choose a .csv file.");
+      if (!selected.size) throw new Error("The selected CSV is empty.");
+      setStatus("reading");
+      const header = parseCsvHeader(await selected.slice(0, 65536).text());
+      if (version !== selection.current) return;
+      setFile(selected); setColumns(header); setTarget(header[header.length - 1]); setStatus("idle");
+    } catch (err) {
+      if (version !== selection.current) return;
+      setError(err instanceof Error ? err.message : "Could not read this file."); setStatus("error");
     }
-  };
+  }
+
+  async function train(event: React.FormEvent) {
+    event.preventDefault();
+    if (!file || !target || busy) return;
+    setStatus("training"); setResult(null); setError("");
+    const controller = new AbortController();
+    request.current = controller;
+    const form = new FormData();
+    form.append("file", file); form.append("target_col", target); form.append("task", task);
+    try {
+      const response = await fetch(`${apiUrl}/train_upload`, { method: "POST", body: form, signal: controller.signal });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = data?.detail;
+        throw new Error(typeof detail === "string" ? detail : `Training request failed (HTTP ${response.status}). Check the API configuration and selected task.`);
+      }
+      if (!data || !["classification", "regression"].includes(data.task) || typeof data.ensemble_oof_score !== "number" || !Number.isFinite(data.ensemble_oof_score) || !data.weights || typeof data.weights !== "object" || Array.isArray(data.weights) || !Object.values(data.weights).every(value => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1)) {
+        throw new Error("The server returned an unexpected training response.");
+      }
+      setResult(data); setStatus("success");
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setError(err instanceof TypeError ? "Could not reach the training service. Check that the API is running and allows this website's origin." : err instanceof Error ? err.message : "Training failed.");
+      setStatus("error");
+    } finally { if (request.current === controller) request.current = null; }
+  }
 
   return (
     <div className="dashboard-container">
-      <h1 className="dashboard-title stagger-1">OmniTabular Control Center</h1>
-      <p className="dashboard-subtitle stagger-2">Upload a CSV dataset, train an ensemble, and review its cross-validation score.</p>
-      
-      <div className="glass-panel main-panel stagger-3">
-        {/* Step 1: Upload */}
-        <div className="form-group">
-          <label className="flex items-center gap-2 mb-2 text-[var(--accent-1)] font-semibold">
-            <ChevronRight size={18} /> 1. Ingest Data (CSV)
-          </label>
-          
-          {!file ? (
-            <div 
-              className="drag-drop-zone"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <UploadCloud className="upload-icon mx-auto" />
-              <h3 style={{fontSize: '1.2rem', marginBottom: '0.5rem', fontWeight: 600}}>Drag & Drop Dataset</h3>
-              <p style={{color: 'var(--text-muted)'}}>or click to browse local files</p>
-              <input 
-                type="file" 
-                accept=".csv" 
-                onChange={handleFileChange} 
-                ref={fileInputRef} 
-                hidden 
-              />
-            </div>
-          ) : (
-            <div className="file-info-card">
-              <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
-                <FileType size={32} color="var(--accent-2)" />
-                <div>
-                  <h4 style={{fontWeight: 600, fontSize: '1.1rem'}}>{file.name}</h4>
-                  <span style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>{formatSize(file.size)}</span>
-                </div>
-              </div>
-              <button 
-                disabled={status === 'training'}
-                onClick={() => { setFile(null); setColumns([]); setResult(null); setStatus('idle'); }} 
-                style={{background: 'rgba(255,50,50,0.1)', color: '#ff7b72', border: '1px solid rgba(255,50,50,0.3)', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 600}}
-              >
-                Change File
-              </button>
-            </div>
-          )}
-        </div>
-        
-        {/* Step 2: Target Column */}
-        {columns.length > 0 && (
-          <div className="form-group animation-fade" style={{marginTop: '2rem'}}>
-            <label className="flex items-center gap-2 mb-2 text-[var(--accent-1)] font-semibold">
-               <ChevronRight size={18} /> 2. Define Target Objective
-            </label>
-            <div className="glass-select-wrapper">
-              <select value={targetCol} onChange={(e) => setTargetCol(e.target.value)} className="glass-select">
-                {columns.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div style={{marginTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center'}}>
-               <span style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginRight: '0.5rem'}}>Detected Features ({columns.length - 1}):</span>
-               {columns.filter(c => c !== targetCol).slice(0, 8).map(c => (
-                 <span key={c} style={{background: 'rgba(255,255,255,0.05)', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid rgba(255,255,255,0.08)'}}>{c}</span>
-               ))}
-               {columns.length > 9 && <span style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>+{columns.length - 9} more</span>}
-            </div>
+      <header className="page-heading"><p className="eyebrow">Your data, one ensemble</p><h1>Training dashboard</h1><p>Upload a CSV, choose what to predict, and compare the ensemble&apos;s validation score.</p></header>
+      <div className="notice"><p>The training API must be running. No login is required. <Link href="/api-reference#local-setup">Setup instructions →</Link></p><p>Train LightGBM, random forest, and linear / logistic regression using 3 validation folds.</p></div>
+      <form className="main-panel glass" onSubmit={train} aria-busy={busy}>
+        <fieldset disabled={busy}>
+          <legend>1. Choose a dataset</legend>
+          <input id="csv-file" aria-label="CSV dataset" type="file" accept=".csv,text/csv" className="sr-only" ref={input} onChange={event => { const selected = event.target.files?.[0]; if (selected) void selectFile(selected); event.target.value = ""; }} />
+          <div className={`drag-drop-zone ${dragging ? "active" : ""}`} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); const selected = event.dataTransfer.files[0]; if (selected) void selectFile(selected); }}>
+            <p className="upload-symbol" aria-hidden="true">↑</p><p>{file ? file.name : "Drop a CSV file here"}</p>
+            {file && <p className="hint">{(file.size / 1024).toFixed(1)} KB · {columns.length} columns</p>}
+            <button className="secondary-btn" type="button" onClick={() => input.current?.click()}>{file ? "Change file" : "Browse files"}</button>
+            <p className="hint">Comma-separated CSV with unique column names and a target column.</p>
           </div>
-        )}
-        
-        {/* Step 3: Trigger Action */}
-        {file && status !== 'training' && status !== 'success' && (
-          <button 
-            className="btn-primary animation-fade" 
-            onClick={handleTrain}
-            disabled={!targetCol}
-            style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '3rem', padding: '1.2rem'}}
-          >
-            <Play size={20} fill="currentColor" /> Train Ensemble
-          </button>
-        )}
-        
-        {/* Step 4: Loading & Live Logs */}
-        {status === 'training' && (
-          <div className="animation-fade" style={{marginTop: '3rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '2rem'}}>
-            <div style={{display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem'}}>
-              <div className="spinner" style={{margin: 0, width: '28px', height: '28px', borderWidth: '3px'}}></div>
-              <h3 style={{color: 'var(--accent-2)', margin: 0, fontWeight: 700}}>Optimization in Progress...</h3>
-            </div>
-            
-            <div className="terminal-simulator">
-              {logs.map((log, idx) => (
-                <div key={idx} className="terminal-log">
-                  <span className="term-time">[{log.time}]</span>
-                  <span className={`term-msg ${log.type === 'success' ? 'term-success' : log.type === 'warn' ? 'term-warn' : ''}`}>
-                    {log.msg}
-                  </span>
-                </div>
-              ))}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
-        )}
-        
-        {status === 'error' && (
-          <div className="error-box animation-fade" style={{display: 'flex', alignItems: 'flex-start', gap: '1rem', marginTop: '2rem'}}>
-            <AlertCircle size={24} color="#ff3232" style={{flexShrink: 0}} />
-            <div>
-              <strong style={{display: 'block', fontSize: '1.1rem', marginBottom: '0.2rem'}}>System Failure</strong>
-              <span>{errorMsg}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Results View */}
-      {status === 'success' && result && (
-        <div className="results-container stagger-4">
-          <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginBottom: '3rem'}}>
-             <Activity size={36} color="var(--accent-3)" />
-             <h2 className="results-title" style={{margin: 0}}>Optimization Achieved</h2>
-          </div>
-          
-          <div className="metric-card" style={{maxWidth: '400px', margin: '0 auto 3rem auto'}}>
-            <div className="metric-content" style={{padding: '3rem', textAlign: 'center'}}>
-              <div style={{textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.5rem'}}>
-                Ensemble Cross-Validation Score ({result.task})
-              </div>
-              <div className="metric-value" style={{fontSize: '4rem', background: 'linear-gradient(to right, var(--accent-3), #2dd4bf)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: '1.1'}}>
-                {result.ensemble_oof_score?.toFixed(5)}
-              </div>
-            </div>
-          </div>
-          
-          <div style={{display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem'}}>
-             <Cpu size={24} color="var(--accent-1)" />
-             <h3 className="weights-title" style={{margin: 0}}>Ensemble Weights</h3>
-          </div>
-          
-          <div className="weights-grid">
-            {Object.entries(result.weights || {})
-              .sort(([,a], [,b]) => b - a)
-              .map(([model, weight], idx) => (
-                <div key={model} className="weight-card" style={{animation: `slideUp 0.5s ease-out ${0.2 + (idx*0.1)}s both`}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                    <div className="weight-name" style={{margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.9rem'}}>{model}</div>
-                    <div className="weight-val" style={{fontWeight: 800, color: 'var(--text-main)', fontSize: '1.1rem'}}>{(weight * 100).toFixed(1)}%</div>
-                  </div>
-                  <div className="weight-bar-container">
-                    <div className="weight-bar" style={{ width: `${(weight * 100).toFixed(1)}%` }}></div>
-                  </div>
-                </div>
-            ))}
-          </div>
-        </div>
-      )}
+        </fieldset>
+        {columns.length > 0 && <fieldset disabled={busy}><legend>2. Choose what to predict</legend><div className="form-grid"><div className="form-group"><label htmlFor="target">Target column</label><select id="target" value={target} onChange={event => { setTarget(event.target.value); setResult(null); setStatus("idle"); setError(""); }}>{columns.map(column => <option key={column}>{column}</option>)}</select></div><div className="form-group"><label htmlFor="task">Prediction task</label><select id="task" value={task} onChange={event => { setTask(event.target.value as Task); setResult(null); setStatus("idle"); setError(""); }}><option value="auto">Auto-detect</option><option value="classification">Classification · categories</option><option value="regression">Regression · numeric values</option></select></div></div><p className="hint">Choose regression explicitly for prices, counts, or other numeric quantities. Classification needs at least 3 rows per class.</p><p className="hint">Features ({columns.length - 1}): {columns.filter(column => column !== target).join(", ")}</p></fieldset>}
+        <button className="btn-primary" type="submit" disabled={!file || !target || busy}>{status === "training" ? "Training ensemble…" : status === "reading" ? "Reading CSV…" : "Train ensemble"}</button>
+        <div role="status" aria-live="polite">{status === "training" && <p className="training-status"><span className="spinner" aria-hidden="true" />Training and cross-validation are running. Large datasets may take several minutes.</p>}{status === "success" && <p className="training-status">Training completed. Results are shown below.</p>}</div>
+        {error && <div role="alert" className="error-box"><strong>Could not complete training</strong><p>{error}</p><Link href="/api-reference#troubleshooting">Troubleshooting →</Link></div>}
+      </form>
+      {result && <section className="results-container" aria-labelledby="results-title"><h2 id="results-title">Ensemble results</h2><div className="metric-card glass"><p>{result.task === "classification" ? "Out-of-fold log loss" : "Out-of-fold RMSE"}</p><strong className="metric-value">{result.ensemble_oof_score.toFixed(5)}</strong><p className="hint">Lower is better. Evaluate on separate test data before assessing performance on new rows.</p></div><h3>Model weights</h3><div className="weights-grid">{Object.entries(result.weights).sort(([, a], [, b]) => b - a).map(([model, weight]) => <article className="weight-card" key={model}><div className="weight-heading"><h4>{model}</h4><span>{(weight * 100).toFixed(1)}%</span></div><div className="weight-bar-container" aria-hidden="true"><div className="weight-bar" style={{ width: `${weight * 100}%` }} /></div></article>)}</div></section>}
     </div>
   );
 }

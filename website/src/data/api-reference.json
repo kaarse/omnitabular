@@ -1,0 +1,477 @@
+{
+  "OmniTabular": {
+    "parameters": [
+      {
+        "name": "task",
+        "type": "str",
+        "default": "'auto'"
+      },
+      {
+        "name": "auto_preprocess",
+        "type": "bool",
+        "default": "True"
+      },
+      {
+        "name": "knn_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "lgb_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "linear_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "svm_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "naive_bayes_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "rf_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "et_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "xgb_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "catboost_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "mlp_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "ft_transformer_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "tab_transformer_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "saint_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "tree_nn_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "tabnet_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "node_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "tabfm_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "gru_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "bigru_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "lstm_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "bilstm_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "cnn1d_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "cnn2d_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "gnn_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "temporal_transformer_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "sa_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "ga_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "symbolic_regression_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "lcs_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "rulefit_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "ripper_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "pre_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "hc_params",
+        "type": "Optional[Dict]",
+        "default": "None"
+      },
+      {
+        "name": "metric",
+        "type": "Optional[Union[str, Callable]]",
+        "default": "None"
+      },
+      {
+        "name": "metric_higher_is_better",
+        "type": "bool",
+        "default": "False"
+      },
+      {
+        "name": "metric_needs_proba",
+        "type": "bool",
+        "default": "False"
+      },
+      {
+        "name": "cv_folds",
+        "type": "int",
+        "default": "5"
+      },
+      {
+        "name": "cv_strategy",
+        "type": "str",
+        "default": "'kfold'"
+      },
+      {
+        "name": "window_size",
+        "type": "Optional[int]",
+        "default": "None"
+      },
+      {
+        "name": "random_state",
+        "type": "int",
+        "default": "42"
+      },
+      {
+        "name": "verbose",
+        "type": "bool",
+        "default": "True"
+      },
+      {
+        "name": "n_jobs",
+        "type": "int",
+        "default": "1"
+      },
+      {
+        "name": "models",
+        "type": "Optional[List[str]]",
+        "default": "None"
+      }
+    ],
+    "methods": [
+      {
+        "name": "available_models",
+        "parameters": [],
+        "description": "Return a list of all model names available for training in OmniTabular."
+      },
+      {
+        "name": "fit",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "array-like",
+            "default": null
+          },
+          {
+            "name": "y",
+            "type": "array-like",
+            "default": null
+          },
+          {
+            "name": "groups",
+            "type": "array-like",
+            "default": "None"
+          }
+        ],
+        "description": "Fit OmniTabular on (X, y)."
+      },
+      {
+        "name": "predict",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "array-like",
+            "default": null
+          }
+        ],
+        "description": "Return final blended predictions."
+      },
+      {
+        "name": "predict_proba",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "array-like",
+            "default": null
+          }
+        ],
+        "description": "Return final blended probability predictions (classification only)."
+      },
+      {
+        "name": "explain",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "array-like",
+            "default": null
+          },
+          {
+            "name": "y",
+            "type": "array-like",
+            "default": null
+          },
+          {
+            "name": "n_repeats",
+            "type": "array-like",
+            "default": "5"
+          }
+        ],
+        "description": "Compute Permutation Feature Importance for the entire ensemble."
+      },
+      {
+        "name": "leaderboard",
+        "parameters": [],
+        "description": "Return a comparison DataFrame of individual model OOF scores and the ensemble."
+      },
+      {
+        "name": "feature_importances",
+        "parameters": [],
+        "description": "Return LightGBM feature importances (split counts by default)."
+      }
+    ],
+    "models": [
+      "knn",
+      "lgb",
+      "linear",
+      "svm",
+      "naive_bayes",
+      "rf",
+      "et",
+      "xgb",
+      "catboost",
+      "mlp",
+      "ft_transformer",
+      "tab_transformer",
+      "saint",
+      "tree_nn",
+      "tabnet",
+      "node",
+      "tabfm",
+      "gru",
+      "bigru",
+      "lstm",
+      "bilstm",
+      "cnn1d",
+      "cnn2d",
+      "gnn",
+      "temporal_transformer",
+      "sa",
+      "ga",
+      "symbolic_regression",
+      "lcs",
+      "rulefit",
+      "ripper",
+      "pre"
+    ]
+  },
+  "HillClimbingEnsemble": {
+    "parameters": [
+      {
+        "name": "metric",
+        "type": "Optional[Union[str, Callable]]",
+        "default": "None"
+      },
+      {
+        "name": "metric_higher_is_better",
+        "type": "bool",
+        "default": "False"
+      },
+      {
+        "name": "metric_needs_proba",
+        "type": "bool",
+        "default": "False"
+      },
+      {
+        "name": "n_iterations",
+        "type": "int",
+        "default": "3000"
+      },
+      {
+        "name": "step_size",
+        "type": "float",
+        "default": "0.1"
+      },
+      {
+        "name": "step_decay",
+        "type": "float",
+        "default": "0.99"
+      },
+      {
+        "name": "decay_every",
+        "type": "int",
+        "default": "50"
+      },
+      {
+        "name": "random_state",
+        "type": "Optional[int]",
+        "default": "42"
+      },
+      {
+        "name": "verbose",
+        "type": "bool",
+        "default": "False"
+      }
+    ],
+    "methods": [
+      {
+        "name": "fit",
+        "parameters": [
+          {
+            "name": "y_true",
+            "type": "np.ndarray",
+            "default": null
+          },
+          {
+            "name": "task",
+            "type": "str",
+            "default": null
+          },
+          {
+            "name": "oof_preds",
+            "type": "Optional[List[np.ndarray]]",
+            "default": "None"
+          },
+          {
+            "name": "oof_probas",
+            "type": "Optional[List[np.ndarray]]",
+            "default": "None"
+          }
+        ],
+        "description": "Find optimal blending weights."
+      },
+      {
+        "name": "blend_predictions",
+        "parameters": [
+          {
+            "name": "predictions",
+            "type": "List[np.ndarray]",
+            "default": null
+          }
+        ],
+        "description": "Apply ``weights_`` to a list of prediction arrays."
+      }
+    ]
+  },
+  "WeightedEnsemble": {
+    "parameters": [
+      {
+        "name": "models",
+        "type": "List[BaseModel]",
+        "default": null
+      },
+      {
+        "name": "weights",
+        "type": "np.ndarray",
+        "default": null
+      },
+      {
+        "name": "task",
+        "type": "str",
+        "default": null
+      }
+    ],
+    "methods": [
+      {
+        "name": "predict_proba",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "np.ndarray",
+            "default": null
+          }
+        ],
+        "description": "Weighted average of predict_proba outputs (classification only)."
+      },
+      {
+        "name": "predict",
+        "parameters": [
+          {
+            "name": "X",
+            "type": "np.ndarray",
+            "default": null
+          }
+        ],
+        "description": "For classification: argmax over blended probabilities."
+      }
+    ]
+  }
+}

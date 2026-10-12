@@ -88,10 +88,11 @@ _MODEL_REGISTRY = {
 
 class OmniTabular:
     """
-    High-level tabular ML class combining **KNN**, **LightGBM**,
-    **Linear / Logistic Regression**, **SVM**, **Naive Bayes**,
-    **Random Forest**, **Extra Trees**, **XGBoost**, and **CatBoost**
-    with **Hill Climbing ensemble weight optimisation**.
+    Train and blend selected tabular models with hill-climbing weight search.
+
+    The registry contains 32 classification options and 31 regression options.
+    Use models=["lgb", "rf", "linear"] for a small starting ensemble.
+    Omitting models trains all task-compatible architectures.
 
     Workflow
     --------
@@ -120,13 +121,31 @@ class OmniTabular:
     catboost_params : dict, optional
     hc_params : dict, optional
         Extra parameters for :class:`HillClimbingEnsemble`.
-    metric : str or None
+    metric : str, callable or None
         Evaluation metric.  Defaults to ``"log_loss"`` (classification) or
         ``"rmse"`` (regression).
     cv_folds : int
         Number of cross-validation folds for OOF generation.
     random_state : int
     verbose : bool
+    models : list[str] or None
+        Registry names to train; None selects all compatible models.
+    n_jobs : int, default 1
+        Parallel model workers. Increase deliberately if memory permits.
+    auto_preprocess : bool, default True
+        Impute, scale and encode separately inside each validation fold.
+    cv_strategy : str, default "kfold"
+        kfold, group_kfold, time_series or sliding_window.
+        Group validation requires groups in fit().
+    window_size : int or None
+        Maximum training window for sliding_window validation.
+    metric_higher_is_better : bool, default False
+        Optimization direction for custom callable metrics.
+    metric_needs_proba : bool, default False
+        Whether a custom metric expects probabilities rather than labels.
+    [model]_params : dict or None
+        Each registry model has a matching parameter dictionary.
+        Options only affect models included in the selection.
 
     Attributes
     ----------
@@ -150,7 +169,7 @@ class OmniTabular:
     >>> from omnitabular import OmniTabular
     >>> from sklearn.datasets import load_iris
     >>> X, y = load_iris(return_X_y=True)
-    >>> model = OmniTabular(task="classification", verbose=True)
+    >>> model = OmniTabular(task="classification", models=["lgb", "rf", "linear"])
     >>> model.fit(X, y)
     >>> print(model.leaderboard())
     >>> preds = model.predict(X[:10])
@@ -683,7 +702,7 @@ class OmniTabular:
 
     def feature_importances(self) -> pd.DataFrame:
         """
-        Return LGB feature importances (gain-based).
+        Return LightGBM feature importances (split counts by default).
 
         Returns
         -------

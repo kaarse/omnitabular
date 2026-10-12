@@ -1,307 +1,48 @@
-'use client';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { CodeBlock } from "@/components/code-block";
+import api from "@/data/api-reference.json";
+import { localSetup, quickStart } from "@/lib/examples";
 
-import { useEffect } from 'react';
-import Link from 'next/link';
+export const metadata: Metadata = { title: "Documentation & API" };
+const descriptions: Record<string, string> = {
+  task: "auto, classification, or regression. Specify regression explicitly for integer-valued numeric targets.",
+  auto_preprocess: "Impute missing values, scale numeric features, and one-hot encode categories within each fold.",
+  models: "List of registry names. None trains all task-compatible models. Start with lgb, rf, and linear.",
+  metric: "log_loss, accuracy, auc, rmse, mae, or a callable. None uses log_loss for classification and rmse for regression.",
+  metric_higher_is_better: "Direction for a custom callable metric. Built-in metrics already specify their direction.",
+  metric_needs_proba: "Set True when a custom callable expects a probability matrix instead of predicted labels.",
+  cv_folds: "Number of validation folds. Each class needs at least this many samples for stratified k-fold validation.",
+  cv_strategy: "kfold, group_kfold, time_series, or sliding_window. Group validation requires groups in fit().",
+  window_size: "Maximum training window for sliding_window; None uses all available past training rows.",
+  random_state: "Seed passed to compatible models and validation splitting; exact reproducibility can depend on hardware.",
+  n_jobs: "Parallel model workers. Default 1 avoids creating large process pools; -1 requests available CPUs.",
+  verbose: "Print training and optimization progress.",
+  hc_params: "HillClimbingEnsemble settings, for example n_iterations=500 or step_size=0.1.",
+};
+const sections = [["quick-start", "Quick start"], ["local-setup", "Local dashboard"], ["configuration", "Configuration"], ["methods", "Python methods"], ["models", "Model names"], ["rest-api", "REST API"], ["deployment", "Deployment"], ["troubleshooting", "Troubleshooting"]];
+const endpoints = [
+  ["GET", "/ping", "Service status and whether a model is loaded."],
+  ["POST", "/train", "JSON: X (rows), y (targets), task (auto by default), cv_folds (3), models (lgb, rf, linear)."],
+  ["POST", "/train_upload", "Multipart form: file (CSV), target_col, task (auto by default). Uses 3 folds and lgb, rf, linear."],
+  ["POST", "/predict", "JSON: data (rows in training feature order), return_proba (false by default). Returns predictions."],
+];
 
-export default function ApiReference() {
-  useEffect(() => {
-    function reveal() {
-      const reveals = document.querySelectorAll('.reveal');
-      for (let i = 0; i < reveals.length; i++) {
-        const windowHeight = window.innerHeight;
-        const elementTop = reveals[i].getBoundingClientRect().top;
-        const elementVisible = 100;
-        if (elementTop < windowHeight - elementVisible) {
-          reveals[i].classList.add('active');
-        }
-      }
-    }
-    window.addEventListener('scroll', reveal);
-    reveal();
-    return () => window.removeEventListener('scroll', reveal);
-  }, []);
-
+export default function Documentation() {
   return (
-    <>
-      <div className='blob-bg'>
-        <div className='blob blob-1'></div>
-        <div className='blob blob-2'></div>
-        <div className='blob blob-3'></div>
+    <div className="docs-layout">
+      <aside className="docs-sidebar"><nav aria-label="Documentation sections"><p className="eyebrow">Documentation</p>{sections.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}</nav></aside>
+      <div className="docs-content">
+        <header className="page-heading"><p className="eyebrow">Python library · Dashboard · REST API</p><h1>Get started with OmniTabular</h1><p>Train and combine models for classification or regression on tabular data. Choose a small ensemble first, then evaluate on a separate test set.</p></header>
+        <section id="quick-start"><h2>Quick start</h2><p>Install the library from GitHub in a virtual environment. The package supports Python 3.9+; Python 3.10+ is recommended.</p><CodeBlock label="Shell" code={`python -m venv .venv\nsource .venv/bin/activate\npython -m pip install git+https://github.com/kaarse/omnitabular.git`} /><p>On Windows PowerShell, activate with <code>.venv\\Scripts\\Activate.ps1</code>. The example below reserves test rows before fitting.</p><CodeBlock code={quickStart} /><p>The leaderboard reports out-of-fold scores and blend weights. These scores select the ensemble; use the test set for an independent assessment.</p></section>
+        <section id="local-setup"><h2>Run the local dashboard</h2><p>Clone the repository and start the API in one terminal:</p><CodeBlock label="Shell · API" code={localSetup} /><p>Start the website in a second terminal with Node.js 20.9+:</p><CodeBlock label="Shell · Website" code={`cd omnitabular/website\nnpm ci\nnpm run dev`} /><p>Open <code>http://localhost:3000/dashboard</code>. Upload a CSV with a header row and at least one feature column, select the target and task, then train. The upload uses LightGBM, random forest, and linear / logistic regression.</p><p>No login or admin account is configured. Interactive REST documentation is at <code>http://localhost:8080/docs</code>.</p><Link className="secondary-btn" href="/dashboard">Open the dashboard →</Link></section>
+        <section id="configuration"><h2>Configuration</h2><p>Pass these arguments to <code>OmniTabular(...)</code>. Defaults below are generated from the current Python source.</p><div className="table-responsive"><table className="docs-table"><caption>OmniTabular constructor options</caption><thead><tr><th scope="col">Parameter</th><th scope="col">Default</th><th scope="col">Purpose</th></tr></thead><tbody>{api.OmniTabular.parameters.filter(p => !p.name.endsWith("_params") || p.name === "hc_params").map(p => <tr key={p.name}><th scope="row"><code>{p.name}</code></th><td><code>{p.default ?? "required"}</code></td><td>{descriptions[p.name]}</td></tr>)}</tbody></table></div><p>Use <code>[model]_params</code> to customize an included model, for example <code>lgb_params={"{\"n_estimators\": 200}"}</code> or <code>mlp_params={"{\"epochs\": 20}"}</code>. Parameters for a model outside the selected list do not train that model.</p><details><summary>All model parameter dictionaries</summary><p className="model-tags">{api.OmniTabular.parameters.filter(p => p.name.endsWith("_params") && p.name !== "hc_params").map(p => <code key={p.name}>{p.name}</code>)}</p></details><h3>Validation and preprocessing</h3><p>Classification k-fold validation is stratified; regression uses ordinary k-fold validation. For grouped data, pass <code>groups=...</code> to <code>fit</code>. For ordered data, preserve row order and choose <code>time_series</code> or <code>sliding_window</code>; only validated rows contribute to the score. Every classification training fold must include every class.</p><p>DataFrame prediction columns must match the training columns. Array inputs use training column order. String and nonconsecutive numeric class labels are preserved; probability columns follow <code>model.classes_</code>.</p></section>
+        <section id="methods"><h2>Python methods</h2>{api.OmniTabular.methods.map(method => <article className="method-block" key={method.name}><h3><code>{method.name}({method.parameters.map(p => p.name + (p.default !== null ? `=${p.default}` : "")).join(", ")})</code></h3><p>{method.description}</p></article>)}<p><code>feature_importances()</code> requires the LightGBM model. With preprocessing enabled, its indices refer to transformed features. <code>explain(X, y)</code> returns permutation importance over the input columns.</p><h3>Lower-level ensemble tools</h3>{[api.HillClimbingEnsemble, api.WeightedEnsemble].map((cls, index) => <details key={index}><summary>{index === 0 ? "HillClimbingEnsemble" : "WeightedEnsemble"}</summary><p>{index === 0 ? "Optimize nonnegative weights using out-of-fold predictions; the optimizer gradually reduces its random-search step size." : "Blend fitted models using fixed weights. Supply compatible probability columns in the same class order."}</p><div className="table-responsive"><table className="docs-table"><thead><tr><th scope="col">Parameter</th><th scope="col">Default</th></tr></thead><tbody>{cls.parameters.map(p => <tr key={p.name}><th scope="row"><code>{p.name}</code></th><td><code>{p.default ?? "required"}</code></td></tr>)}</tbody></table></div>{cls.methods.map(m => <p key={m.name}><code>{m.name}({m.parameters.map(p => p.name).join(", ")})</code> — {m.description}</p>)}</details>)}</section>
+        <section id="models"><h2>Model registry</h2><p>Pass any of these {api.OmniTabular.models.length} names in the <code>models</code> list. Naive Bayes is skipped for regression; the other 31 are registered for both tasks.</p><div className="model-tags">{api.OmniTabular.models.map(name => <code key={name}>{name}</code>)}</div><CodeBlock code={`model = OmniTabular(\n    models=["lgb", "mlp"],\n    lgb_params={"n_estimators": 200},\n    mlp_params={"epochs": 20},\n    hc_params={"n_iterations": 500},\n    n_jobs=1,\n)`} /><p>Sequence and graph model options operate on the tabular input representation; they do not automatically construct a time-series forecasting dataset. Runtime depends on the model count, folds, dataset size, and epoch settings.</p></section>
+        <section id="rest-api"><h2>REST API</h2><p>Local base URL: <code>http://localhost:8080</code>. Training replaces the service&apos;s current model and saves it to disk.</p><div className="table-responsive"><table className="docs-table"><caption>Available HTTP endpoints</caption><thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Request / behavior</th></tr></thead><tbody>{endpoints.map(([method, path, detail]) => <tr key={path}><td><code>{method}</code></td><th scope="row"><code>{path}</code></th><td>{detail}</td></tr>)}</tbody></table></div><CodeBlock label="Shell · Train CSV" code={`curl -X POST http://localhost:8080/train_upload \\\n  -F "file=@data.csv" \\\n  -F "target_col=target" \\\n  -F "task=classification"`} /><CodeBlock label="JSON · Example training response" code={`{\n  "status": "success",\n  "task": "classification",\n  "ensemble_oof_score": 0.42,\n  "weights": {"lgb": 0.5, "rf": 0.3, "linear": 0.2}\n}`} /><p>Response values above are illustrative. Prediction input contains features only, in the original training order:</p><CodeBlock label="Shell · Predict" code={`curl -X POST http://localhost:8080/predict \\\n  -H "Content-Type: application/json" \\\n  -d '{"data": [[1, "category"]], "return_proba": false}'`} /><p>Invalid training data or an unavailable model returns HTTP 400. Invalid request fields return 422. Concurrent training requests return 409. <code>return_proba=true</code> is available for classification only.</p></section>
+        <section id="deployment"><h2>Deployment</h2><p>For the website server, run <code>npm run build</code>, then <code>npm start</code>. For static hosting, build with <code>NEXT_OUTPUT_EXPORT=1 npm run build</code> and serve <code>out/</code>. Set <code>NEXT_PUBLIC_BASE_PATH=/omnitabular</code> before building for that subpath.</p><p>Set <code>NEXT_PUBLIC_API_URL</code> before starting or building the website to the reachable API URL. An HTTPS website needs an HTTPS API. GitHub Pages hosts the website only; it does not host the Python service.</p><p>The API reads <code>OMNITABULAR_CORS_ORIGINS</code> (comma-separated website origins) and <code>OMNITABULAR_MODEL_PATH</code> (default <code>model.pkl</code>). Use one API worker; each process keeps its own model in memory. There is no built-in authentication, so deploy behind your access controls if you need restricted access.</p><CodeBlock label="Shell · Docker, from repository root" code={`docker build -f api/Dockerfile -t omnitabular .\ndocker run --rm -p 8080:8080 \\\n  -e OMNITABULAR_MODEL_PATH=/data/model.pkl \\\n  -v omnitabular-data:/data omnitabular`} /></section>
+        <section id="troubleshooting"><h2>Troubleshooting</h2><dl><dt>Cannot connect to the API</dt><dd>Start the Python service, confirm its address, and allow the website origin through CORS. A remote website cannot reach an API bound only to your machine&apos;s loopback address.</dd><dt>Too few rows in a target class</dt><dd>The dashboard uses 3 folds, so each class needs at least 3 samples. Choose regression for continuous numeric targets, or use the Python / JSON API to configure folds.</dd><dt>Training takes a long time</dt><dd>Choose fewer models and smaller epoch / iteration settings. Omitting the Python models list trains all compatible architectures.</dd><dt>Missing OpenMP library on Linux</dt><dd>Install the system OpenMP runtime (for example, libgomp1 on Debian / Ubuntu). The provided Docker image includes it.</dd><dt>Need an admin password?</dt><dd>There is no built-in login or administrator account. The local dashboard opens directly.</dd></dl></section>
       </div>
-
-      <nav className='navbar glass'>
-        <div className='logo'>OmniTabular</div>
-        <ul className='nav-links'>
-          <li><Link href='/'>Home</Link></li>
-          <li><Link href='/#documentation'>Documentation</Link></li>
-          <li><a href='https://github.com/kaarse/omnitabular' target='_blank' rel='noreferrer' className='btn primary-btn'>GitHub</a></li>
-        </ul>
-      </nav>
-
-      <main style={{ padding: '150px 10%' }}>
-        <h1 style={{ textAlign: 'center', fontSize: '4rem', marginBottom: '4rem' }}>
-          API <span className='gradient-text'>Reference</span>
-        </h1>
-<div className='api-card glass reveal' id='OmniTabular'>
-<h2>OmniTabular</h2>
-<div className='docstring'>
-High-level tabular ML class combining **KNN**, **LightGBM**,<br />
-    **Linear / Logistic Regression**, **SVM**, **Naive Bayes**,<br />
-    **Random Forest**, **Extra Trees**, **XGBoost**, and **CatBoost**<br />
-    with **Hill Climbing ensemble weight optimisation**.<br />
-<br />
-<h4 className='doc-section-title'>Workflow</h4>
-    1. ``fit(X, y)``<br />
-       a. Detect task type (classification / regression).<br />
-       b. Select applicable models (Naive Bayes is skipped for regression).<br />
-       c. Generate cross-validated OOF predictions per model.<br />
-       d. Run Hill Climbing to find optimal blending weights.<br />
-       e. Re-train each model on the full dataset.<br />
-    2. ``predict(X)`` / ``predict_proba(X)``<br />
-       Returns blended predictions using optimal weights.<br />
-    3. ``leaderboard()``<br />
-       Returns a DataFrame comparing individual OOF scores vs. ensemble.<br />
-<br />
-<h4 className='doc-section-title'>Parameters</h4>
-<strong>task</strong>: &#123;&quot;auto&quot;, &quot;classification&quot;, &quot;regression&quot;&#125;<br />
-<strong>knn_params</strong>: dict, optional<br />
-<strong>lgb_params</strong>: dict, optional<br />
-<strong>linear_params</strong>: dict, optional<br />
-<strong>svm_params</strong>: dict, optional<br />
-<strong>naive_bayes_params</strong>: dict, optional<br />
-<strong>rf_params</strong>: dict, optional<br />
-<strong>et_params</strong>: dict, optional<br />
-<strong>xgb_params</strong>: dict, optional<br />
-<strong>catboost_params</strong>: dict, optional<br />
-<strong>hc_params</strong>: dict, optional<br />
-<strong>Extra parameters for</strong>: class:`HillClimbingEnsemble`.<br />
-<strong>metric</strong>: str or None<br />
-        Evaluation metric.  Defaults to ``&quot;log_loss&quot;`` (classification) or<br />
-        ``&quot;rmse&quot;`` (regression).<br />
-<strong>cv_folds</strong>: int<br />
-        Number of cross-validation folds for OOF generation.<br />
-<strong>random_state</strong>: int<br />
-<strong>verbose</strong>: bool<br />
-<br />
-<h4 className='doc-section-title'>Attributes</h4>
-<strong>task_</strong>: str<br />
-        Detected or specified task type.<br />
-<strong>model_names_</strong>: list[str]<br />
-        Names of the models that participated in the ensemble (task-compatible).<br />
-<strong>models_</strong>: dict[str, BaseModel]<br />
-        Fitted base models keyed by name.<br />
-<strong>weights_</strong>: np.ndarray<br />
-        Optimal blending weights (same order as ``model_names_``).<br />
-<strong>ensemble_</strong>: WeightedEnsemble<br />
-        The final blending ensemble.<br />
-<strong>oof_scores_</strong>: dict[str, float]<br />
-        Per-model OOF metric scores.<br />
-<strong>ensemble_oof_score_</strong>: float<br />
-        OOF metric score of the blended ensemble.<br />
-<br />
-<h4 className='doc-section-title'>Examples</h4>
-<pre><code>    &gt;&gt;&gt; from omnitabular import OmniTabular
-    &gt;&gt;&gt; from sklearn.datasets import load_iris
-    &gt;&gt;&gt; X, y = load_iris(return_X_y=True)
-    &gt;&gt;&gt; model = OmniTabular(task=&quot;classification&quot;, verbose=True)
-    &gt;&gt;&gt; model.fit(X, y)
-    &gt;&gt;&gt; print(model.leaderboard())
-    &gt;&gt;&gt; preds = model.predict(X[:10])
-</code></pre>
-
-</div>
-<h3>__init__<span className='signature'>(self, task: &#x27;str&#x27; = &#x27;auto&#x27;, knn_params: &#x27;Optional[Dict]&#x27; = None, lgb_params: &#x27;Optional[Dict]&#x27; = None, linear_params: &#x27;Optional[Dict]&#x27; = None, svm_params: &#x27;Optional[Dict]&#x27; = None, naive_bayes_params: &#x27;Optional[Dict]&#x27; = None, rf_params: &#x27;Optional[Dict]&#x27; = None, et_params: &#x27;Optional[Dict]&#x27; = None, xgb_params: &#x27;Optional[Dict]&#x27; = None, catboost_params: &#x27;Optional[Dict]&#x27; = None, mlp_params: &#x27;Optional[Dict]&#x27; = None, ft_transformer_params: &#x27;Optional[Dict]&#x27; = None, tab_transformer_params: &#x27;Optional[Dict]&#x27; = None, saint_params: &#x27;Optional[Dict]&#x27; = None, tree_nn_params: &#x27;Optional[Dict]&#x27; = None, tabnet_params: &#x27;Optional[Dict]&#x27; = None, node_params: &#x27;Optional[Dict]&#x27; = None, tabfm_params: &#x27;Optional[Dict]&#x27; = None, gru_params: &#x27;Optional[Dict]&#x27; = None, bigru_params: &#x27;Optional[Dict]&#x27; = None, lstm_params: &#x27;Optional[Dict]&#x27; = None, bilstm_params: &#x27;Optional[Dict]&#x27; = None, cnn1d_params: &#x27;Optional[Dict]&#x27; = None, cnn2d_params: &#x27;Optional[Dict]&#x27; = None, gnn_params: &#x27;Optional[Dict]&#x27; = None, temporal_transformer_params: &#x27;Optional[Dict]&#x27; = None, sa_params: &#x27;Optional[Dict]&#x27; = None, ga_params: &#x27;Optional[Dict]&#x27; = None, symbolic_regression_params: &#x27;Optional[Dict]&#x27; = None, lcs_params: &#x27;Optional[Dict]&#x27; = None, rulefit_params: &#x27;Optional[Dict]&#x27; = None, ripper_params: &#x27;Optional[Dict]&#x27; = None, pre_params: &#x27;Optional[Dict]&#x27; = None, hc_params: &#x27;Optional[Dict]&#x27; = None, metric: &#x27;Optional[str]&#x27; = None, cv_folds: &#x27;int&#x27; = 5, random_state: &#x27;int&#x27; = 42, verbose: &#x27;bool&#x27; = True) -&gt; &#x27;None&#x27;</span></h3>
-<div className='methods-container'>
-<div className='method-block'>
-<h4>feature_importances<span className='signature'>(self) -&gt; &#x27;pd.DataFrame&#x27;</span></h4>
-<div className='method-doc'>
-Return LGB feature importances (gain-based).<br />
-<br />
-        Returns<br />
-        pd.DataFrame with columns: [feature_index, importance]<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>fit<span className='signature'>(self, X, y) -&gt; &quot;&#x27;OmniTabular&#x27;&quot;</span></h4>
-<div className='method-doc'>
-Fit OmniTabular on (X, y).<br />
-<br />
-        Steps<br />
-        1. Detect task + choose metric.<br />
-        2. OOF prediction for every compatible base model.<br />
-        3. Hill Climbing on OOF predictions to find weights.<br />
-        4. Re-train on full dataset.<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>leaderboard<span className='signature'>(self) -&gt; &#x27;pd.DataFrame&#x27;</span></h4>
-<div className='method-doc'>
-Return a comparison DataFrame of individual model OOF scores and the ensemble.<br />
-<br />
-        Returns<br />
-        pd.DataFrame with columns: [model, oof_&lt;metric&gt;, weight]<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>predict<span className='signature'>(self, X) -&gt; &#x27;np.ndarray&#x27;</span></h4>
-<div className='method-doc'>
-Return final blended predictions.<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>predict_proba<span className='signature'>(self, X) -&gt; &#x27;np.ndarray&#x27;</span></h4>
-<div className='method-doc'>
-Return final blended probability predictions (classification only).<br />
-
-</div>
-</div>
-</div>
-</div>
-
-<div className='api-card glass reveal' id='HillClimbingEnsemble'>
-<h2>HillClimbingEnsemble</h2>
-<div className='docstring'>
-Stochastic Hill Climbing optimiser for ensemble blending weights.<br />
-<br />
-    Given a collection of OOF predictions from multiple base models, this<br />
-    optimiser searches for a weight vector **w** (summing to 1) that maximises<br />
-    (or minimises, depending on the metric) the blended prediction score.<br />
-<br />
-    Algorithm<br />
-    1. Start from a uniform weight vector ``w = [1/K, ..., 1/K]``.<br />
-    2. At each step, sample a random perturbation ``Δw`` and compute<br />
-       ``w&#x27; = normalise(w + step_size * Δw)``.<br />
-    3. Accept ``w&#x27;`` if it improves the objective.<br />
-    4. Gradually shrink ``step_size`` (simulated annealing schedule).<br />
-    5. Repeat for ``n_iterations`` steps.<br />
-<br />
-<h4 className='doc-section-title'>Parameters</h4>
-<strong>metric</strong>: str or None<br />
-        Metric name from ``METRIC_REGISTRY``. If None, defaults to<br />
-        ``&quot;log_loss&quot;`` (classification) or ``&quot;rmse&quot;`` (regression).<br />
-<strong>n_iterations</strong>: int<br />
-        Number of hill climbing iterations.<br />
-<strong>step_size</strong>: float<br />
-        Initial perturbation magnitude.<br />
-<strong>step_decay</strong>: float<br />
-        Multiplicative decay applied to ``step_size`` every ``decay_every`` steps.<br />
-<strong>decay_every</strong>: int<br />
-        How often (steps) to apply step decay.<br />
-<strong>random_state</strong>: int or None<br />
-<strong>verbose</strong>: bool<br />
-        Print progress if True.<br />
-<br />
-<h4 className='doc-section-title'>Attributes</h4>
-<strong>weights_</strong>: np.ndarray of shape (n_models,)<br />
-        Optimal blending weights found after ``fit``.<br />
-<strong>best_score_</strong>: float<br />
-        Best metric value achieved.<br />
-<strong>score_history_</strong>: list of float<br />
-        Score at each accepted improvement.<br />
-<br />
-<h4 className='doc-section-title'>Examples</h4>
-<pre><code>    &gt;&gt;&gt; import numpy as np
-    &gt;&gt;&gt; from omnitabular import HillClimbingEnsemble
-    &gt;&gt;&gt; rng = np.random.default_rng(0)
-    &gt;&gt;&gt; y_true = rng.integers(0, 2, 200)
-    &gt;&gt;&gt; # Simulate OOF probabilities from 3 models
-    &gt;&gt;&gt; oof_probas = [rng.dirichlet([1, 1], size=200) for _ in range(3)]
-    &gt;&gt;&gt; hc = HillClimbingEnsemble(metric=&quot;log_loss&quot;, n_iterations=500)
-    &gt;&gt;&gt; hc.fit(y_true, oof_preds=None, oof_probas=oof_probas, task=&quot;classification&quot;)
-    &gt;&gt;&gt; hc.weights_
-</code></pre>
-
-</div>
-<h3>__init__<span className='signature'>(self, metric: &#x27;Optional[str]&#x27; = None, n_iterations: &#x27;int&#x27; = 3000, step_size: &#x27;float&#x27; = 0.1, step_decay: &#x27;float&#x27; = 0.99, decay_every: &#x27;int&#x27; = 50, random_state: &#x27;Optional[int]&#x27; = 42, verbose: &#x27;bool&#x27; = False) -&gt; &#x27;None&#x27;</span></h3>
-<div className='methods-container'>
-<div className='method-block'>
-<h4>blend_predictions<span className='signature'>(self, predictions: &#x27;List[np.ndarray]&#x27;) -&gt; &#x27;np.ndarray&#x27;</span></h4>
-<div className='method-doc'>
-Apply ``weights_`` to a list of prediction arrays.<br />
-<br />
-<h4 className='doc-section-title'>Parameters</h4>
-<strong>predictions</strong>: list of np.ndarray<br />
-            Same order as during ``fit``.<br />
-<br />
-        Returns<br />
-<strong>blended</strong>: np.ndarray<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>fit<span className='signature'>(self, y_true: &#x27;np.ndarray&#x27;, task: &#x27;str&#x27;, oof_preds: &#x27;Optional[List[np.ndarray]]&#x27; = None, oof_probas: &#x27;Optional[List[np.ndarray]]&#x27; = None) -&gt; &quot;&#x27;HillClimbingEnsemble&#x27;&quot;</span></h4>
-<div className='method-doc'>
-Find optimal blending weights.<br />
-<br />
-<h4 className='doc-section-title'>Parameters</h4>
-<strong>y_true</strong>: array-like of shape (n_samples,)<br />
-<strong>task</strong>: &#123;&quot;classification&quot;, &quot;regression&quot;&#125;<br />
-<strong>oof_preds</strong>: list of np.ndarray of shape (n_samples,), optional<br />
-            Hard OOF predictions per model (used for regression or hard-vote blending).<br />
-<strong>oof_probas</strong>: list of np.ndarray of shape (n_samples, n_classes), optional<br />
-            Soft OOF probabilities per model (classification only).<br />
-
-</div>
-</div>
-</div>
-</div>
-
-<div className='api-card glass reveal' id='WeightedEnsemble'>
-<h2>WeightedEnsemble</h2>
-<div className='docstring'>
-Combines predictions from a list of fitted base models using fixed weights.<br />
-<br />
-    For **classification**, predictions are blended as a weighted sum of<br />
-    ``predict_proba`` outputs.  For **regression**, a weighted sum of<br />
-    ``predict`` outputs is used.<br />
-<br />
-<h4 className='doc-section-title'>Parameters</h4>
-<strong>models</strong>: list of BaseModel<br />
-        Fitted base learners.<br />
-<strong>weights</strong>: array-like of shape (n_models,)<br />
-        Blending weights (need not sum to 1 — they will be normalised).<br />
-<strong>task</strong>: &#123;&quot;classification&quot;, &quot;regression&quot;&#125;<br />
-<br />
-<h4 className='doc-section-title'>Attributes</h4>
-<strong>weights_</strong>: np.ndarray<br />
-        Normalised weight vector.<br />
-<br />
-<h4 className='doc-section-title'>Examples</h4>
-<pre><code>    &gt;&gt;&gt; from omnitabular import KNNModel, LGBModel, WeightedEnsemble
-    &gt;&gt;&gt; import numpy as np
-    &gt;&gt;&gt; X, y = np.random.rand(100, 4), np.random.randint(0, 3, 100)
-    &gt;&gt;&gt; knn = KNNModel(task=&quot;classification&quot;).fit(X, y)
-    &gt;&gt;&gt; lgb = LGBModel(task=&quot;classification&quot;).fit(X, y)
-    &gt;&gt;&gt; ens = WeightedEnsemble([knn, lgb], weights=[0.4, 0.6], task=&quot;classification&quot;)
-    &gt;&gt;&gt; ens.predict_proba(X[:5])
-</code></pre>
-
-</div>
-<h3>__init__<span className='signature'>(self, models: &#x27;List[BaseModel]&#x27;, weights: &#x27;np.ndarray&#x27;, task: &#x27;str&#x27;) -&gt; &#x27;None&#x27;</span></h3>
-<div className='methods-container'>
-<div className='method-block'>
-<h4>predict<span className='signature'>(self, X: &#x27;np.ndarray&#x27;) -&gt; &#x27;np.ndarray&#x27;</span></h4>
-<div className='method-doc'>
-For classification: argmax over blended probabilities.<br />
-        For regression: weighted average of predictions.<br />
-
-</div>
-</div>
-<div className='method-block'>
-<h4>predict_proba<span className='signature'>(self, X: &#x27;np.ndarray&#x27;) -&gt; &#x27;np.ndarray&#x27;</span></h4>
-<div className='method-doc'>
-Weighted average of predict_proba outputs (classification only).<br />
-
-</div>
-</div>
-</div>
-</div>
-
-      </main>
-    </>
+    </div>
   );
 }

@@ -43,5 +43,7 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
       - run: npm ci
+      - run: python ../scripts/build_docs.py --check
+      - run: npm test
       - run: npm run lint
       - run: npm run build
