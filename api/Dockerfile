@@ -1,16 +1,10 @@
-FROM python:3.10-slim
-
+# Build from the repository root: docker build -f api/Dockerfile -t omnitabular .
+FROM python:3.12-slim
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy omnitabular core package
-COPY ../omnitabular /app/omnitabular
-
-# Copy API server
-COPY main.py .
-
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md ./
+COPY omnitabular ./omnitabular
+RUN pip install --no-cache-dir '.[api]'
+COPY api ./api
 EXPOSE 8080
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]

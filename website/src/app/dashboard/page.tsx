@@ -2,6 +2,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UploadCloud, FileType, AlertCircle, Play, ChevronRight, Activity, Cpu } from 'lucide-react';
 
+type TrainingResult = {
+  task: string;
+  ensemble_oof_score: number;
+  weights: Record<string, number>;
+};
+
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
@@ -10,7 +16,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState<'idle' | 'uploading' | 'training' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TrainingResult | null>(null);
   
   // Terminal logs state
   const [logs, setLogs] = useState<{time: string, msg: string, type: 'info'|'success'|'warn'}[]>([]);
@@ -40,18 +46,42 @@ export default function Dashboard() {
   };
 
   const processFile = (selected: File) => {
+    setStatus('idle');
+    setErrorMsg('');
+    setResult(null);
+    setColumns([]);
+    setTargetCol('');
+    if (!selected.name.toLowerCase().endsWith('.csv')) {
+      setErrorMsg('Please select a CSV file.');
+      setStatus('error');
+      return;
+    }
     setFile(selected);
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const firstLine = text.split('\n')[0];
+      const firstLine = text.replace(/^\uFEFF/, '').split(/\r?\n/)[0];
       if (firstLine) {
-        const cols = firstLine.split(',').map(c => c.trim().replace(/['"]/g, ''));
+        const cols: string[] = [];
+        let value = '', quoted = false;
+        for (let i = 0; i < firstLine.length; i++) {
+          const char = firstLine[i];
+          if (char === '"') {
+            if (quoted && firstLine[i + 1] === '"') { value += '"'; i++; }
+            else quoted = !quoted;
+          } else if (char === ',' && !quoted) { cols.push(value); value = ''; }
+          else value += char;
+        }
+        cols.push(value);
         setColumns(cols);
         setTargetCol(cols[cols.length - 1]);
       }
     };
-    reader.readAsText(selected.slice(0, 5000));
+    reader.onerror = () => {
+      setErrorMsg('Could not read the selected file.');
+      setStatus('error');
+    };
+    reader.readAsText(selected.slice(0, 65536));
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -75,35 +105,13 @@ export default function Dashboard() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
-  const simulateTrainingLogs = () => {
-    setLogs([]);
-    addLog('Initializing OmniTabular orchestration core...', 'info');
-    
-    const steps = [
-      { msg: 'Validating dataset schema and memory constraints...', delay: 800, type: 'success' },
-      { msg: 'Spawning Joblib concurrent worker pool (32 cores allocated).', delay: 1500, type: 'info' },
-      { msg: 'Preprocessing: Imputing NaNs, One-Hot Encoding categorical features.', delay: 2500, type: 'info' },
-      { msg: 'Compiling Deep Learning Architectures (MLP, TabTransformer, SAINT)...', delay: 4000, type: 'info' },
-      { msg: 'Initializing Tree Ensembles (XGBoost, CatBoost, RandomForest)...', delay: 4800, type: 'info' },
-      { msg: 'Training phase commenced across 32 individual models.', delay: 6000, type: 'warn' },
-      { msg: 'WARNING: Sub-optimal convergence in Model #14 (GRU). Applying early stopping.', delay: 9000, type: 'warn' },
-      { msg: 'Cross-validation complete. Running stochastic Hill Climbing optimizer.', delay: 11000, type: 'info' },
-      { msg: 'Ensemble weights optimized successfully.', delay: 13000, type: 'success' }
-    ];
-    
-    // We set timeouts, but in a real React component we should clean them up if unmounted. 
-    // For this mock dashboard, this will be visually sufficient.
-    steps.forEach((step) => {
-      setTimeout(() => {
-        addLog(step.msg, step.type as any);
-      }, step.delay);
-    });
-  };
-
   const handleTrain = async () => {
     if (!file || !targetCol) return;
     setStatus('training');
-    simulateTrainingLogs();
+    setResult(null);
+    setErrorMsg('');
+    setLogs([]);
+    addLog('Uploading dataset and waiting for cross-validation and ensemble training...');
     
     const formData = new FormData();
     formData.append('file', file);
@@ -111,7 +119,7 @@ export default function Dashboard() {
     formData.append('task', 'auto');
 
     try {
-      const res = await fetch('http://localhost:8080/train_upload', {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/$/, '')}/train_upload`, {
         method: 'POST',
         body: formData,
       });
@@ -121,23 +129,21 @@ export default function Dashboard() {
         throw new Error(data.detail || 'Training failed on server.');
       }
       
-      setTimeout(() => {
-        setResult(data);
-        setStatus('success');
-      }, 14000); // Wait for the visual logs to finish
-    } catch (err: any) {
-      setTimeout(() => {
-        addLog(`CRITICAL FATAL: ${err.message}`, 'warn');
-        setErrorMsg(err.message);
-        setStatus('error');
-      }, 2000);
+      setResult(data);
+      addLog('Training complete. Results received from the server.', 'success');
+      setStatus('success');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Training failed.';
+      addLog(message, 'warn');
+      setErrorMsg(message);
+      setStatus('error');
     }
   };
 
   return (
     <div className="dashboard-container">
       <h1 className="dashboard-title stagger-1">OmniTabular Control Center</h1>
-      <p className="dashboard-subtitle stagger-2">Drop your raw tabular dataset, and let our distributed neural and tree ensembles discover the ultimate mathematical truth.</p>
+      <p className="dashboard-subtitle stagger-2">Upload a CSV dataset, train an ensemble, and review its cross-validation score.</p>
       
       <div className="glass-panel main-panel stagger-3">
         {/* Step 1: Upload */}
@@ -175,6 +181,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <button 
+                disabled={status === 'training'}
                 onClick={() => { setFile(null); setColumns([]); setResult(null); setStatus('idle'); }} 
                 style={{background: 'rgba(255,50,50,0.1)', color: '#ff7b72', border: '1px solid rgba(255,50,50,0.3)', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 600}}
               >
@@ -213,9 +220,10 @@ export default function Dashboard() {
           <button 
             className="btn-primary animation-fade" 
             onClick={handleTrain}
+            disabled={!targetCol}
             style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '3rem', padding: '1.2rem'}}
           >
-            <Play size={20} fill="currentColor" /> Initialize Distributed Training
+            <Play size={20} fill="currentColor" /> Train Ensemble
           </button>
         )}
         
@@ -273,13 +281,13 @@ export default function Dashboard() {
           
           <div style={{display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem'}}>
              <Cpu size={24} color="var(--accent-1)" />
-             <h3 className="weights-title" style={{margin: 0}}>Dominant Genetic Weights</h3>
+             <h3 className="weights-title" style={{margin: 0}}>Ensemble Weights</h3>
           </div>
           
           <div className="weights-grid">
-            {Object.entries(result.weights)
-              .sort(([,a]: any, [,b]: any) => b - a)
-              .map(([model, weight]: any, idx) => (
+            {Object.entries(result.weights || {})
+              .sort(([,a], [,b]) => b - a)
+              .map(([model, weight], idx) => (
                 <div key={model} className="weight-card" style={{animation: `slideUp 0.5s ease-out ${0.2 + (idx*0.1)}s both`}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
                     <div className="weight-name" style={{margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.9rem'}}>{model}</div>

@@ -55,6 +55,15 @@ class BaseModel(ABC):
         if not self._fitted:
             raise RuntimeError(f"{self.__class__.__name__} is not fitted yet. Call fit() first.")
 
+    def _prepare_target(self, y):
+        from .utils import detect_task
+        y = np.asarray(y)
+        if self.task == "auto":
+            self.task = detect_task(y)
+        if self.task == "classification":
+            self.classes_, y = np.unique(y, return_inverse=True)
+        return y
+
     @staticmethod
     def _to_numpy(X) -> np.ndarray:
         if isinstance(X, pd.DataFrame):

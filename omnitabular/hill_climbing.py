@@ -137,7 +137,8 @@ class HillClimbingEnsemble:
                 f"Metric '{metric_name}' requires hard OOF predictions (oof_preds)."
             )
 
-        predictions = oof_probas if needs_proba else oof_preds
+        use_proba = task == "classification" and oof_probas is not None and len(oof_probas) > 0
+        predictions = oof_probas if use_proba else oof_preds
         K = len(predictions)
 
         rng = np.random.default_rng(self.random_state)
@@ -148,13 +149,16 @@ class HillClimbingEnsemble:
 
         def _score(weights: np.ndarray) -> float:
             blended = sum(weights[i] * predictions[i] for i in range(K))
-            if needs_proba:
+            if use_proba or needs_proba:
                 # Clip to [0, 1] and renormalise rows to avoid FP overflow
                 blended = np.clip(blended, 0, 1)
                 row_sums = blended.sum(axis=1, keepdims=True)
                 row_sums = np.where(row_sums == 0, 1, row_sums)
                 blended = blended / row_sums
-                return evaluate(metric_name, y_true, None, proba=blended, higher_is_better=higher_is_better, needs_proba=needs_proba)
+                return evaluate(metric_name, y_true, np.unique(y_true)[np.argmax(blended, axis=1)], proba=blended, higher_is_better=higher_is_better, needs_proba=needs_proba)
+            if task == "classification":
+                classes = np.unique(y_true)
+                blended = classes[np.abs(blended[:, None] - classes).argmin(axis=1)]
             return evaluate(metric_name, y_true, blended, higher_is_better=higher_is_better, needs_proba=needs_proba)
 
         best_score = _score(w)
@@ -163,7 +167,8 @@ class HillClimbingEnsemble:
         if self.verbose:
             print(f"[HillClimbing] Start | metric={metric_name} | score={best_score:.6f}")
 
-        for iteration in range(1, self.n_iterations + 1):
+        iterations = self.n_iterations if K > 1 else 0
+        for iteration in range(1, iterations + 1):
             # Decay step size
             if iteration % self.decay_every == 0:
                 step *= self.step_decay

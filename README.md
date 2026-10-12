@@ -72,9 +72,10 @@ from sklearn.datasets import load_breast_cancer
 
 X, y = load_breast_cancer(return_X_y=True)
 
-# Train all 32 models, optimize ensemble weights, and output leaderboard
+# Start with three fast models; omit models to train all compatible architectures
 model = OmniTabular(
-    task="classification", 
+    task="classification",
+    models=["lgb", "rf", "linear"],
     verbose=True,
     # You can pass customized arguments to ANY model via [name]_params
     lgb_params={"n_estimators": 200},
@@ -139,3 +140,72 @@ A comprehensive integration test suite verifies dimensions, weight sums, multi-c
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+
+
+## Running locally
+
+From the repository root (Python 3.10+ recommended):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev,api]"
+python -m pytest tests/ -q
+```
+
+For a smaller CPU-only installation, install PyTorch first with
+`python -m pip install torch --index-url https://download.pytorch.org/whl/cpu`,
+then install the project as above.
+
+Start the API in one terminal:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8080
+```
+
+Interactive API documentation is at `http://localhost:8080/docs`.
+The API trains LightGBM, random forest and linear models by default. JSON
+`POST /train` accepts a `models` list and `cv_folds`; `POST /train_upload`
+accepts a CSV file, `target_col`, and optional `task` as multipart form data.
+`POST /predict` accepts `{"data": [[1, "category"]]}` with columns in training
+order, and optional `return_proba: true` for classification.
+
+Start the website in another terminal (Node.js 20.9+):
+
+```bash
+cd website
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000/dashboard` to upload a CSV and train an ensemble.
+Set `NEXT_PUBLIC_API_URL` before starting or building the website to use a
+remote API. Set `OMNITABULAR_CORS_ORIGINS` on the API to the website origin
+(comma-separated for multiple origins). The model is saved to `model.pkl`;
+set `OMNITABULAR_MODEL_PATH` to change its location. Run one API worker because
+model state is held in memory; restart the service to reload the saved model.
+
+To build the API container, run from the repository root:
+
+```bash
+docker build -f api/Dockerfile -t omnitabular .
+docker run --rm -p 8080:8080 omnitabular
+```
+
+## Training controls
+
+- `models=["lgb", "rf", "linear"]` selects a manageable starting ensemble.
+  `OmniTabular.available_models()` lists all 32 options. Training every model
+  across five folds can take substantially longer.
+- `n_jobs=1` is the default to avoid creating a process for every CPU core.
+  Increase it deliberately if memory permits; individual tree models use one
+  thread unless overridden through their parameter dictionaries.
+- Classification preserves string and nonconsecutive numeric target labels.
+  Use explicit `task="regression"` for numeric targets that the automatic
+  heuristic could interpret as classes.
+- Preprocessing is fitted separately inside each validation fold. Temporal
+  validation scores only rows included in validation folds. Every classification
+  training fold must contain all target classes.
+- Ensemble weights are selected using cross-validation scores. Evaluate on a
+  separate test set to estimate performance on new data.

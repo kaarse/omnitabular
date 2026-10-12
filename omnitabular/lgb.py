@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Optional, Union
 
 import numpy as np
+import pandas as pd
 
 try:
     import lightgbm as lgb
@@ -124,8 +125,16 @@ class LGBModel(BaseModel):
             return LGBMClassifier(**shared)
         return LGBMRegressor(**shared)
 
+    def _ensure_dataframe(self, X: np.ndarray) -> pd.DataFrame:
+        if isinstance(X, pd.DataFrame):
+            if not all(isinstance(c, str) for c in X.columns):
+                X = X.copy()
+                X.columns = [str(c) for c in X.columns]
+            return X
+        return pd.DataFrame(X, columns=[f"f_{i}" for i in range(np.shape(X)[1])])
+
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> "LGBModel":
-        X = self._to_numpy(X)
+        X = self._ensure_dataframe(X)
         y = np.asarray(y)
 
         if self.task == "auto":
@@ -156,14 +165,14 @@ class LGBModel(BaseModel):
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
-        X = self._to_numpy(X)
+        X = self._ensure_dataframe(X)
         return self._model.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
         if self.task != "classification":
             raise NotImplementedError("predict_proba is not available for regression.")
-        X = self._to_numpy(X)
+        X = self._ensure_dataframe(X)
         return self._model.predict_proba(X)
 
     @property

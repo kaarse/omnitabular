@@ -1,12 +1,1 @@
-fastapi
-uvicorn
-pydantic
-pandas
-numpy
-scikit-learn
-# And standard omnitabular dependencies
-lightgbm
-catboost
-xgboost
-torch
-tabnet
+-e .[api]

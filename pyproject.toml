@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "omnitabular"
 version = "0.1.0"
-description = "Tabular ML framework: KNN + LightGBM + Hill Climbing ensemble optimization"
+description = "Tabular ML framework with 32 models and optimized weighted ensembling"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -16,10 +16,12 @@ dependencies = [
     "xgboost>=2.0",
     "catboost>=1.2",
     "torch>=2.0",
+    "joblib>=1.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov"]
+dev = ["pytest>=7", "pytest-cov", "httpx>=0.27"]
+api = ["fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9"]
 
 [tool.setuptools.packages.find]
 where = ["."]

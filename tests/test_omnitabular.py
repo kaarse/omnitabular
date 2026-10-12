@@ -79,16 +79,7 @@ class TestOmniTabularClassification:
 
     def test_leaderboard_structure(self, iris):
         X, y = iris
-        model = OmniTabular(task="classification", verbose=False,
-                            lgb_params={"n_estimators": 2},
-                            mlp_params={"epochs": 1},
-                            ft_transformer_params={"epochs": 1},
-                            tab_transformer_params={"epochs": 1},
-                            saint_params={"epochs": 1},
-                            tree_nn_params={"epochs": 1},
-                            tabnet_params={"epochs": 1},
-                            node_params={"epochs": 1},
-                            tabfm_params={"epochs": 1})
+        model = OmniTabular(task="classification", verbose=False, **FAST_PARAMS)
         model.fit(X, y)
         lb = model.leaderboard()
         assert isinstance(lb, pd.DataFrame)

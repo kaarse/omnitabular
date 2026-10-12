@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import inspect
 import numpy as np
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -93,14 +94,22 @@ class LinearModel(BaseModel):
             X = self._scaler.fit_transform(X)
 
         if self.task == "classification":
+            kwargs = dict(self._extra_kwargs)
+            ratio = kwargs.pop("l1_ratio", 0.5)
+            penalty_parameter = inspect.signature(LogisticRegression).parameters.get("penalty")
+            if penalty_parameter is None or penalty_parameter.default == "deprecated":
+                if self.penalty not in {"l1", "l2", "elasticnet", None}:
+                    raise ValueError(f"Unknown penalty '{self.penalty}'.")
+                regularization = {"C": np.inf if self.penalty is None else self.C,
+                                  "l1_ratio": ratio if self.penalty == "elasticnet" else float(self.penalty == "l1")}
+            else:
+                regularization = {"C": self.C, "penalty": self.penalty}
+                if self.penalty == "elasticnet":
+                    regularization["l1_ratio"] = ratio
             self._model = LogisticRegression(
-                C=self.C,
-                l1_ratio=0,  # equivalent to L2 penalty
-                solver=self.solver,
-                max_iter=self.max_iter,
-                fit_intercept=self.fit_intercept,
-                random_state=self.random_state,
-                **self._extra_kwargs,
+                solver=self.solver, max_iter=self.max_iter,
+                fit_intercept=self.fit_intercept, random_state=self.random_state,
+                **regularization, **kwargs,
             )
         else:
             self._model = LinearRegression(

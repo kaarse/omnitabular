@@ -102,7 +102,8 @@ class TabTransformerModel(BaseModel):
 
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> "TabTransformerModel":
         X = self._to_numpy(X)
-        y = np.asarray(y)
+        y = self._prepare_target(y)
+        torch.manual_seed(self.random_state)
         
         input_dim = X.shape[1]
         
@@ -136,7 +137,8 @@ class TabTransformerModel(BaseModel):
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
         X = self._to_numpy(X)
-        return predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        predictions = predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        return self.classes_[predictions.astype(int)] if self.task == "classification" else predictions
         
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()

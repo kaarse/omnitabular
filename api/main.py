@@ -1,150 +1,126 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+"""REST service for training and serving one OmniTabular ensemble."""
+
+from contextlib import asynccontextmanager
+from pathlib import Path
+from threading import Lock
+from typing import Any, Literal
+import io
+import os
+import pickle
+import tempfile
+
 import numpy as np
 import pandas as pd
-import pickle
-import os
-import io
-import uvicorn
-from typing import List, Dict, Any, Union
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from omnitabular import OmniTabular
 
-app = FastAPI(
-    title="OmniTabular Live API",
-    description="High-speed REST API for running OmniTabular ML predictions.",
-    version="0.1.0"
-)
+MODEL_CACHE_PATH = os.getenv("OMNITABULAR_MODEL_PATH", "model.pkl")
+_global_model = None
+_training_lock = Lock()
+Task = Literal["auto", "classification", "regression"]
+DEFAULT_MODELS = ["lgb", "rf", "linear"]
 
+
+@asynccontextmanager
+async def lifespan(app):
+    global _global_model
+    path = Path(MODEL_CACHE_PATH)
+    if path.exists():
+        with path.open("rb") as stream:
+            _global_model = pickle.load(stream)
+    yield
+
+
+app = FastAPI(title="OmniTabular Live API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=os.getenv("OMNITABULAR_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","),
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Global in-memory model
-MODEL_CACHE_PATH = os.getenv("OMNITABULAR_MODEL_PATH", "model.pkl")
-_global_model = None
-
-@app.on_event("startup")
-def load_model():
-    global _global_model
-    if os.path.exists(MODEL_CACHE_PATH):
-        with open(MODEL_CACHE_PATH, "rb") as f:
-            _global_model = pickle.load(f)
-        print(f"Loaded OmniTabular model from {MODEL_CACHE_PATH}")
-    else:
-        print("Warning: No pre-trained model found. Call /train or mount a model.pkl")
 
 class PredictRequest(BaseModel):
-    data: List[List[float]]
+    data: list[list[Any]]
     return_proba: bool = False
 
+
 class TrainRequest(BaseModel):
-    X: List[List[float]]
-    y: List[Union[int, float]]
-    task: str = "auto"
-    cv_folds: int = 3
+    X: list[list[Any]]
+    y: list[Any]
+    task: Task = "auto"
+    cv_folds: int = Field(default=3, ge=2)
+    models: list[str] = Field(default_factory=lambda: DEFAULT_MODELS.copy())
+
+
+def _train(X, y, task, cv_folds=3, models=None):
+    global _global_model
+    if not _training_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Training is already in progress.")
+    temporary_path = None
+    try:
+        model = OmniTabular(task=task, cv_folds=cv_folds, models=DEFAULT_MODELS if models is None else models,
+                           verbose=False, n_jobs=1)
+        model.fit(X, y)
+        path = Path(MODEL_CACHE_PATH)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary_path = Path(stream.name)
+            pickle.dump(model, stream)
+        os.replace(temporary_path, path)
+        _global_model = model
+        return {
+            "status": "success",
+            "task": model.task_,
+            "ensemble_oof_score": float(model.ensemble_oof_score_),
+            "weights": {name: float(weight) for name, weight in zip(model.model_names_, model.weights_)},
+        }
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+        _training_lock.release()
+
 
 @app.get("/ping")
 def ping():
     return {"status": "ok", "model_loaded": _global_model is not None}
 
+
 @app.post("/predict")
 def predict(req: PredictRequest):
-    if _global_model is None:
+    model = _global_model
+    if model is None:
         raise HTTPException(status_code=400, detail="Model is not trained or loaded yet.")
-    
     try:
-        X_arr = np.array(req.data)
-        if req.return_proba and _global_model.task_ == "classification":
-            preds = _global_model.predict_proba(X_arr)
-        else:
-            preds = _global_model.predict(X_arr)
-            
-        return {"predictions": preds.tolist()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        X = np.asarray(req.data, dtype=object)
+        predictions = model.predict_proba(X) if req.return_proba else model.predict(X)
+        return {"predictions": predictions.tolist()}
+    except (ValueError, TypeError, NotImplementedError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @app.post("/train")
 def train(req: TrainRequest):
-    global _global_model
-    try:
-        X_arr = np.array(req.X)
-        y_arr = np.array(req.y)
-        
-        model = OmniTabular(
-            task=req.task, 
-            cv_folds=req.cv_folds, 
-            auto_preprocess=True,
-            verbose=False,
-            n_jobs=-1
-        )
-        model.fit(X_arr, y_arr)
-        
-        _global_model = model
-        with open(MODEL_CACHE_PATH, "wb") as f:
-            pickle.dump(model, f)
-            
-        return {
-            "status": "success", 
-            "task": model.task_,
-            "ensemble_oof_score": model.ensemble_oof_score_
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # DataFrame preserves per-column types when numbers and strings are mixed.
+    return _train(pd.DataFrame(req.X), np.asarray(req.y), req.task, req.cv_folds, req.models)
+
 
 @app.post("/train_upload")
-async def train_upload(
-    file: UploadFile = File(...), 
-    target_col: str = Form(...),
-    task: str = Form("auto")
-):
-    global _global_model
+def train_upload(file: UploadFile = File(...), target_col: str = Form(...), task: Task = Form("auto")):
     try:
-        contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-        
-        if target_col not in df.columns:
-            raise HTTPException(status_code=400, detail=f"Target column '{target_col}' not found in CSV.")
-            
-        y_arr = df[target_col].values
-        X_df = df.drop(columns=[target_col])
-        X_arr = X_df.values
-        
-        model = OmniTabular(
-            task=task,
-            auto_preprocess=True,
-            verbose=False,
-            n_jobs=-1
-        )
-        model.fit(X_arr, y_arr)
-        
-        _global_model = model
-        with open(MODEL_CACHE_PATH, "wb") as f:
-            pickle.dump(model, f)
-            
-        best_weights = model.ensemble.weights_ if hasattr(model, 'ensemble') and hasattr(model.ensemble, 'weights_') else []
-        model_names = list(model.models_.keys())
-        
-        weights_dict = {}
-        if len(best_weights) == len(model_names):
-            for n, w in zip(model_names, best_weights):
-                if w > 0.001:
-                    weights_dict[n] = float(w)
-                    
-        return {
-            "status": "success",
-            "task": model.task_,
-            "ensemble_oof_score": model.ensemble_oof_score_,
-            "weights": weights_dict
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        df = pd.read_csv(io.BytesIO(file.file.read()))
+    except (ValueError, UnicodeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid CSV: {exc}") from exc
+    if target_col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Target column '{target_col}' not found in CSV.")
+    return _train(df.drop(columns=[target_col]), df[target_col].to_numpy(), task)
+
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)

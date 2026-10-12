@@ -53,8 +53,9 @@ export default function Home() {
         <ul className="nav-links">
           <li><Link href="#features">Features</Link></li>
           <li><Link href="#architectures">Architectures</Link></li>
+          <li><Link href="/dashboard">Dashboard</Link></li>
           <li><Link href="/api-reference">Documentation & API</Link></li>
-          <li><a href="https://github.com/omnitabular/omnitabular" target="_blank" rel="noreferrer" className="btn primary-btn">GitHub</a></li>
+          <li><a href="https://github.com/kaarse/omnitabular" target="_blank" rel="noreferrer" className="btn primary-btn">GitHub</a></li>
         </ul>
       </nav>
 
@@ -74,7 +75,7 @@ export default function Home() {
 X, y = load_breast_cancer(return_X_y=<span className="boolean">True</span>)
 
 <span className="comment"># Train 32 models & optimize weights</span>
-model = OmniTabular(task=<span className="string">"classification"</span>, verbose=<span className="boolean">True</span>)
+model = OmniTabular(task=<span className="string">&quot;classification&quot;</span>, verbose=<span className="boolean">True</span>)
 model.fit(X, y)
 
 <span className="function">print</span>(model.leaderboard())</code></pre>

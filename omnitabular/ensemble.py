@@ -78,8 +78,10 @@ class WeightedEnsemble:
         """
         if self.task == "classification":
             proba = self.predict_proba(X)
+            if hasattr(self.models[0], "classes_"):
+                return self.models[0].classes_[np.argmax(proba, axis=1)]
             # Recover class labels from first model (which must be fitted)
-            if hasattr(self.models[0]._model, "classes_"):
+            if hasattr(getattr(self.models[0], "_model", None), "classes_"):
                 classes = self.models[0]._model.classes_
                 return classes[np.argmax(proba, axis=1)]
             return np.argmax(proba, axis=1)

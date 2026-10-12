@@ -28,3 +28,6 @@ website/node_modules/
 website_old/node_modules/
 website/out/
 website/.next/
+
+# Local trained models
+model.pkl

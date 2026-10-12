@@ -29,6 +29,9 @@ jobs:
         run: npm ci
         working-directory: ./website
       - name: Build Next.js
+        env:
+          NEXT_OUTPUT_EXPORT: "1"
+          NEXT_PUBLIC_BASE_PATH: /omnitabular
         run: npm run build
         working-directory: ./website
       - name: Upload artifact

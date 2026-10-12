@@ -34,7 +34,7 @@ export default function ApiReference() {
         <ul className='nav-links'>
           <li><Link href='/'>Home</Link></li>
           <li><Link href='/#documentation'>Documentation</Link></li>
-          <li><a href='https://github.com/omnitabular/omnitabular' target='_blank' rel='noreferrer' className='btn primary-btn'>GitHub</a></li>
+          <li><a href='https://github.com/kaarse/omnitabular' target='_blank' rel='noreferrer' className='btn primary-btn'>GitHub</a></li>
         </ul>
       </nav>
 

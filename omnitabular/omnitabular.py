@@ -38,8 +38,11 @@ from .temporal_transformer import TemporalTransformerModel
 from .evolutionary import SAModel, GAModel, SymbolicRegressionModel, LCSModel
 from .rules import RuleFitModel, RipperModel, PREModel
 from .utils import detect_task, evaluate, get_default_metric, METRIC_REGISTRY
+import inspect
 import joblib
 from sklearn.model_selection import StratifiedKFold, KFold, GroupKFold, TimeSeriesSplit
+from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.validation import check_consistent_length
 from .preprocessing import TabularPreprocessor
 from .explain import ensemble_permutation_importance
 
@@ -198,11 +201,24 @@ class OmniTabular:
         window_size: Optional[int] = None,
         random_state: int = 42,
         verbose: bool = True,
-        n_jobs: int = -1,
+        n_jobs: int = 1,
+        models: Optional[List[str]] = None,
     ) -> None:
         if task not in ("auto", "classification", "regression"):
             raise ValueError(f"Unknown task '{task}'.")
 
+        if cv_strategy not in {"kfold", "group_kfold", "time_series", "sliding_window"}:
+            raise ValueError(f"Unknown cv_strategy '{cv_strategy}'.")
+        if not isinstance(cv_folds, int) or cv_folds < 2:
+            raise ValueError("cv_folds must be an integer of at least 2.")
+        if n_jobs == 0:
+            raise ValueError("n_jobs cannot be zero.")
+        if models is not None:
+            if not models or isinstance(models, str):
+                raise ValueError("models must be a non-empty list of model names.")
+            unknown = set(models) - set(_MODEL_REGISTRY)
+            if unknown:
+                raise ValueError(f"Unknown models: {sorted(unknown)}")
         self.task = task
         self._user_params = {
             "knn":         knn_params or {},
@@ -248,6 +264,7 @@ class OmniTabular:
         self.random_state = random_state
         self.verbose = verbose
         self.n_jobs = n_jobs
+        self.models = models
         self.auto_preprocess = auto_preprocess
         self.preprocessor_: Optional[TabularPreprocessor] = None
 
@@ -299,6 +316,13 @@ class OmniTabular:
     # Private helpers
     # ------------------------------------------------------------------
 
+    @classmethod
+    def available_models(cls) -> List[str]:
+        """
+        Return a list of all model names available for training in OmniTabular.
+        """
+        return list(_MODEL_REGISTRY.keys())
+
     def _log(self, msg: str) -> None:
         if self.verbose:
             print(f"[OmniTabular] {msg}")
@@ -320,13 +344,27 @@ class OmniTabular:
     def _build_model_defs(self) -> Dict[str, Tuple]:
         """
         Return {name: (cls, kwargs)} for models compatible with the current task.
+        If `models` was specified by the user, filter to those models.
         """
         defs = {}
         for name, (cls, defaults, supported_tasks) in _MODEL_REGISTRY.items():
+            if self.models is not None and name not in self.models:
+                continue
             if self.task_ not in supported_tasks:
                 self._log(f"Skipping {name.upper()} (not supported for {self.task_})")
                 continue
             merged = {"task": self.task_, **defaults, **self._user_params.get(name, {})}
+            parameters = inspect.signature(cls).parameters
+            if "random_state" in parameters:
+                merged.setdefault("random_state", self.random_state)
+            if "random_seed" in parameters:
+                merged.setdefault("random_seed", self.random_state)
+            # Each model owns its threads; avoid multiplying worker pools.
+            if name in {"lgb", "xgb", "rf", "et", "knn"}:
+                merged.setdefault("n_jobs", 1)
+            if name == "catboost":
+                merged.setdefault("thread_count", 1)
+                merged.setdefault("allow_writing_files", False)
             defs[name] = (cls, merged)
         return defs
 
@@ -349,9 +387,16 @@ class OmniTabular:
         else:
             oof_proba = None
 
-        splits = list(self._generate_splits(X, y, groups))
+        splits = self._splits_
         for fold, (tr_idx, val_idx) in enumerate(splits, start=1):
-            X_tr, X_val = X[tr_idx], X[val_idx]
+            if isinstance(X, pd.DataFrame):
+                X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
+            else:
+                X_tr, X_val = X[tr_idx], X[val_idx]
+            if self.auto_preprocess:
+                preprocessor = TabularPreprocessor()
+                X_tr = preprocessor.fit_transform(X_tr)
+                X_val = preprocessor.transform(X_val)
             y_tr = y[tr_idx]
 
             m = model_cls(**model_kwargs)
@@ -361,7 +406,7 @@ class OmniTabular:
             if self.task_ == "classification":
                 oof_proba[val_idx] = m.predict_proba(X_val)
 
-        return oof_pred, oof_proba
+        return oof_pred[self.oof_mask_], (oof_proba[self.oof_mask_] if oof_proba is not None else None)
 
     def _score_oof(
         self,
@@ -375,6 +420,14 @@ class OmniTabular:
         else:
             _, _, needs_proba = METRIC_REGISTRY[metric_name]
             
+        if needs_proba and oof_proba is not None:
+            # Normalize probas to prevent sklearn metric warnings about sum != 1
+            oof_proba = np.clip(oof_proba, 0, 1)
+            row_sums = oof_proba.sum(axis=1, keepdims=True)
+            # Avoid division by zero
+            row_sums[row_sums == 0] = 1.0
+            oof_proba = oof_proba / row_sums
+
         if needs_proba:
             return evaluate(metric_name, y, oof_pred, proba=oof_proba, needs_proba=needs_proba)
         return evaluate(metric_name, y, oof_pred, needs_proba=needs_proba)
@@ -394,20 +447,41 @@ class OmniTabular:
         3. Hill Climbing on OOF predictions to find weights.
         4. Re-train on full dataset.
         """
-        # --- Step 0: Auto Preprocessing ---
-        if self.auto_preprocess:
-            self.preprocessor_ = TabularPreprocessor()
-            X = self.preprocessor_.fit_transform(X)
-        else:
-            X = np.asarray(X) if not isinstance(X, np.ndarray) else X
-            
+        self._fitted = False
+        self.models_ = {}
+        self.preprocessor_ = None
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X).infer_objects() if self.auto_preprocess else np.asarray(X)
         y = np.asarray(y)
+        if X.ndim != 2 or X.shape[1] == 0:
+            raise ValueError("X must be a two-dimensional table with at least one feature.")
+        if y.ndim != 1 or len(y) == 0 or pd.isna(y).any():
+            raise ValueError("y must be a non-empty one-dimensional target without missing values.")
+        check_consistent_length(X, y)
+        if groups is not None:
+            check_consistent_length(X, groups)
 
         # --- Step 1: task & metric ---
         if self.task == "auto":
             self.task_ = detect_task(y)
         else:
             self.task_ = self.task
+        self._label_encoder = None
+        if self.task_ == "classification":
+            self._label_encoder = LabelEncoder().fit(y)
+            self.classes_ = self._label_encoder.classes_
+            if len(self.classes_) < 2:
+                raise ValueError("Classification requires at least two classes.")
+            y = self._label_encoder.transform(y)
+            if self.cv_strategy == "kfold" and np.bincount(y).min() < self.cv_folds:
+                raise ValueError("Each class needs at least cv_folds samples for stratified validation.")
+        self._splits_ = list(self._generate_splits(X, y, groups))
+        self.oof_mask_ = np.zeros(len(y), dtype=bool)
+        for train_idx, val_idx in self._splits_:
+            self.oof_mask_[val_idx] = True
+            if self.task_ == "classification" and len(np.unique(y[train_idx])) != len(self.classes_):
+                raise ValueError("Each training fold must contain every target class. Adjust the folds or provide more training data.")
+        y_oof = y[self.oof_mask_]
         self._log(f"Task detected: {self.task_}")
 
         if callable(self.metric):
@@ -417,14 +491,21 @@ class OmniTabular:
         else:
             metric_name = self.metric or get_default_metric(self.task_)
             self._log(f"Optimising metric: {metric_name}")
+            if metric_name not in METRIC_REGISTRY:
+                raise ValueError(f"Unknown metric '{metric_name}'. Available: {list(METRIC_REGISTRY)}")
             _, _, needs_proba = METRIC_REGISTRY[metric_name]
+        if needs_proba and self.task_ != "classification":
+            raise ValueError("Probability metrics require classification.")
 
         # --- Step 2: OOF predictions ---
         model_defs = self._build_model_defs()
+        if not model_defs:
+            raise ValueError("No selected models support this task.")
         self.model_names_ = list(model_defs.keys())
         n_models = len(self.model_names_)
         self._log(f"Base models ({n_models}): {', '.join(n.upper() for n in self.model_names_)}")
 
+        parallel_jobs = min(joblib.effective_n_jobs(self.n_jobs), n_models)
         oof_preds_list = []
         oof_probas_list = []
         oof_scores = {}
@@ -433,10 +514,10 @@ class OmniTabular:
         
         def _run_oof(name, cls, kwargs):
             o_pred, o_proba = self._oof_for_model(name, cls, kwargs, X, y, groups)
-            s = self._score_oof(y, o_pred, o_proba, metric_name)
+            s = self._score_oof(y_oof, o_pred, o_proba, metric_name)
             return name, o_pred, o_proba, s
             
-        results = joblib.Parallel(n_jobs=self.n_jobs)(
+        results = joblib.Parallel(n_jobs=parallel_jobs)(
             joblib.delayed(_run_oof)(name, cls, kwargs) for name, (cls, kwargs) in model_defs.items()
         )
 
@@ -463,31 +544,36 @@ class OmniTabular:
 
         hc = HillClimbingEnsemble(**hc_defaults)
         hc.fit(
-            y_true=y,
+            y_true=y_oof,
             task=self.task_,
-            oof_preds=oof_preds_list if not needs_proba else None,
-            oof_probas=oof_probas_list if needs_proba else None,
+            oof_preds=oof_preds_list,
+            oof_probas=oof_probas_list if self.task_ == "classification" else None,
         )
 
         self.weights_ = hc.weights_
         self._hc = hc
 
         # Ensemble OOF score
-        if needs_proba:
+        if self.task_ == "classification":
             blended_proba = hc.blend_predictions(oof_probas_list)
             blended_pred = np.argmax(blended_proba, axis=1)
             self.ensemble_oof_score_ = evaluate(
-                metric_name, y, blended_pred, proba=blended_proba, needs_proba=needs_proba
+                metric_name, y_oof, blended_pred, proba=blended_proba, needs_proba=needs_proba
             )
         else:
             blended_pred = hc.blend_predictions(oof_preds_list)
-            self.ensemble_oof_score_ = evaluate(metric_name, y, blended_pred, needs_proba=needs_proba)
+            self.ensemble_oof_score_ = evaluate(metric_name, y_oof, blended_pred, needs_proba=needs_proba)
 
         self._log(f"Ensemble OOF {metric_name}: {self.ensemble_oof_score_:.6f}")
         weight_str = ", ".join(
             f"{n.upper()}={w:.4f}" for n, w in zip(self.model_names_, self.weights_)
         )
         self._log(f"Optimal weights → {weight_str}")
+
+        # Fit preprocessing on all data only after validation is complete.
+        if self.auto_preprocess:
+            self.preprocessor_ = TabularPreprocessor()
+            X = self.preprocessor_.fit_transform(X)
 
         # --- Step 4: Full-data re-training ---
         self._log(f"Re-training models on full dataset... (Parallel n_jobs={self.n_jobs})")
@@ -497,7 +583,7 @@ class OmniTabular:
             m.fit(X, y) # Groups ignored at final train map
             return name, m
             
-        fitted_results = joblib.Parallel(n_jobs=self.n_jobs)(
+        fitted_results = joblib.Parallel(n_jobs=parallel_jobs)(
             joblib.delayed(_train_full)(name, cls, kwargs) for name, (cls, kwargs) in model_defs.items()
         )
         
@@ -522,7 +608,10 @@ class OmniTabular:
             X = self.preprocessor_.transform(X)
         else:
             X = np.asarray(X)
-        return self.ensemble_.predict(X)
+        predictions = self.ensemble_.predict(X)
+        if self._label_encoder is not None:
+            return self._label_encoder.inverse_transform(predictions.astype(int))
+        return predictions
 
     def predict_proba(self, X) -> np.ndarray:
         """Return final blended probability predictions (classification only)."""
@@ -541,24 +630,17 @@ class OmniTabular:
         """
         self._check_fitted()
         
-        if callable(self.metric):
-            from sklearn.metrics import make_scorer
-            scorer = make_scorer(
-                self.metric, 
-                greater_is_better=self.metric_higher_is_better, 
-                needs_proba=self.metric_needs_proba
-            )
+        metric = self.metric or get_default_metric(self.task_)
+        if callable(metric):
+            higher, needs_proba = self.metric_higher_is_better, self.metric_needs_proba
         else:
-            metric_name = self.metric or get_default_metric(self.task_)
-            # Scikit-learn permutation importance utilizes scoring strings
-            if metric_name == "log_loss":
-                scorer = "neg_log_loss"
-            elif metric_name == "roc_auc":
-                scorer = "roc_auc"
-            elif metric_name == "rmse":
-                scorer = "neg_root_mean_squared_error"
-            else:
-                scorer = "accuracy" if self.task_ == "classification" else "r2"
+            _, higher, needs_proba = METRIC_REGISTRY[metric]
+
+        def scorer(estimator, features, target):
+            prediction = estimator.predict(features)
+            proba = estimator.predict_proba(features) if needs_proba else None
+            score = evaluate(metric, target, prediction, proba=proba, needs_proba=needs_proba)
+            return score if higher else -score
 
         return ensemble_permutation_importance(
             self, X, y, scorer=scorer, n_repeats=n_repeats, random_state=self.random_state
@@ -574,7 +656,11 @@ class OmniTabular:
         """
         self._check_fitted()
         metric_name = self.metric or get_default_metric(self.task_)
-        _, higher_is_better, _ = METRIC_REGISTRY[metric_name]
+        if callable(metric_name):
+            higher_is_better = self.metric_higher_is_better
+            metric_name = getattr(metric_name, "__name__", "custom")
+        else:
+            _, higher_is_better, _ = METRIC_REGISTRY[metric_name]
 
         rows = []
         for i, (name, score) in enumerate(self.oof_scores_.items()):

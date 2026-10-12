@@ -38,6 +38,7 @@ def demo_iris():
 
     model = OmniTabular(
         task="classification",
+        models=["knn", "lgb", "linear", "svm", "naive_bayes"],
         lgb_params={"n_estimators": 200},
         hc_params={"n_iterations": 2000},
         verbose=True,
@@ -67,6 +68,7 @@ def demo_breast_cancer():
 
     model = OmniTabular(
         task="classification",
+        models=["knn", "lgb", "linear", "svm", "naive_bayes"],
         metric="auc",
         lgb_params={"n_estimators": 200},
         hc_params={"n_iterations": 1500},
@@ -96,6 +98,7 @@ def demo_diabetes():
 
     model = OmniTabular(
         task="regression",
+        models=["knn", "lgb", "linear", "svm"],
         lgb_params={"n_estimators": 300, "num_leaves": 31},
         hc_params={"n_iterations": 1500},
         verbose=True,

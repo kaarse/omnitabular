@@ -17,12 +17,12 @@ class TabularCNN1D(nn.Module):
         
         current_len = num_features
         for out_c in channels:
-            layers.append(nn.Conv1d(in_c, out_c, kernel_size=kernel_size, padding=kernel_size//2))
+            layers.append(nn.Conv1d(in_c, out_c, kernel_size=kernel_size, padding="same"))
             layers.append(nn.BatchNorm1d(out_c))
             layers.append(nn.ReLU())
-            layers.append(nn.MaxPool1d(2))
+            layers.append(nn.MaxPool1d(2, ceil_mode=True))
             in_c = out_c
-            current_len = current_len // 2
+            current_len = math.ceil(current_len / 2)
             
         self.conv_net = nn.Sequential(*layers)
         
@@ -52,12 +52,12 @@ class TabularCNN2D(nn.Module):
         current_grid = self.grid_size
         
         for out_c in channels:
-            layers.append(nn.Conv2d(in_c, out_c, kernel_size=kernel_size, padding=kernel_size//2))
+            layers.append(nn.Conv2d(in_c, out_c, kernel_size=kernel_size, padding="same"))
             layers.append(nn.BatchNorm2d(out_c))
             layers.append(nn.ReLU())
-            layers.append(nn.MaxPool2d(2))
+            layers.append(nn.MaxPool2d(2, ceil_mode=True))
             in_c = out_c
-            current_grid = current_grid // 2
+            current_grid = math.ceil(current_grid / 2)
             
         self.conv_net = nn.Sequential(*layers)
         
@@ -108,7 +108,8 @@ class CNN1DModel(BaseModel):
 
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> "CNN1DModel":
         X = self._to_numpy(X)
-        y = np.asarray(y)
+        y = self._prepare_target(y)
+        torch.manual_seed(self.random_state)
         
         input_dim = X.shape[1]
         
@@ -140,7 +141,8 @@ class CNN1DModel(BaseModel):
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
         X = self._to_numpy(X)
-        return predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        predictions = predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        return self.classes_[predictions.astype(int)] if self.task == "classification" else predictions
         
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
@@ -177,7 +179,8 @@ class CNN2DModel(BaseModel):
 
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> "CNN2DModel":
         X = self._to_numpy(X)
-        y = np.asarray(y)
+        y = self._prepare_target(y)
+        torch.manual_seed(self.random_state)
         
         input_dim = X.shape[1]
         
@@ -209,7 +212,8 @@ class CNN2DModel(BaseModel):
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()
         X = self._to_numpy(X)
-        return predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        predictions = predict_pytorch_model(self.model, X, self.task, batch_size=self.batch_size, proba=False)
+        return self.classes_[predictions.astype(int)] if self.task == "classification" else predictions
         
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         self._check_fitted()

@@ -74,16 +74,30 @@ def train_pytorch_model(
     device = get_device()
     model = model.to(device)
     
-    # Validation split
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=val_size, random_state=random_state, 
-        stratify=y if task == "classification" else None
-    )
-    
+    if len(y) < 2:
+        raise ValueError("Neural models require at least two training samples.")
+    if batch_size < 2:
+        raise ValueError("batch_size must be at least 2 for batch normalization.")
+    if len(y) < 4:
+        # Tiny datasets cannot support both a holdout and batch normalization.
+        X_train, X_val, y_train, y_val = X, X, y, y
+    else:
+        test_count = max(1, int(np.ceil(len(y) * val_size)))
+        stratify = None
+        if task == "classification":
+            _, counts = np.unique(y, return_counts=True)
+            test_count = max(test_count, len(counts))
+            if counts.min() >= 2 and len(y) - test_count >= len(counts):
+                stratify = y
+        test_count = min(test_count, len(y) - 2)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=test_count, random_state=random_state, stratify=stratify
+        )
+
     train_dataset = TabularDataset(X_train, y_train, task)
     val_dataset = TabularDataset(X_val, y_val, task)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=(len(train_dataset) > batch_size))
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=(len(train_dataset) % batch_size == 1))
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     criterion = nn.CrossEntropyLoss() if task == "classification" else nn.MSELoss()
@@ -102,7 +116,7 @@ def train_pytorch_model(
             if task == "classification":
                 loss = criterion(outputs, batch_y)
             else:
-                loss = criterion(outputs.squeeze(), batch_y)
+                loss = criterion(outputs.squeeze(-1), batch_y)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * batch_X.size(0)
@@ -119,7 +133,7 @@ def train_pytorch_model(
                 if task == "classification":
                     loss = criterion(outputs, batch_y)
                 else:
-                    loss = criterion(outputs.squeeze(), batch_y)
+                    loss = criterion(outputs.squeeze(-1), batch_y)
                 val_loss += loss.item() * batch_X.size(0)
         
         val_loss /= len(val_dataset)

@@ -139,7 +139,7 @@ def oof_predictions(
     y = np.asarray(y)
     n = len(y)
 
-    oof_pred = np.zeros(n, dtype=float)
+    oof_pred = np.empty(n, dtype=y.dtype) if task == "classification" else np.zeros(n, dtype=float)
 
     if task == "classification":
         n_classes = len(np.unique(y))

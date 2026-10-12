@@ -66,7 +66,7 @@ def ensemble_permutation_importance(
     
     result = permutation_importance(
         wrapper, X, y, scoring=scorer, n_repeats=n_repeats,
-        random_state=random_state, n_jobs=-1
+        random_state=random_state, n_jobs=1
     )
     
     importances_mean = result.importances_mean

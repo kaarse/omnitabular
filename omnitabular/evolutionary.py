@@ -44,7 +44,7 @@ class SAModel(BaseModel):
         for _ in range(self.max_iter):
             # Proposal
             prop_w = self.w + rng.randn(*self.w.shape) * temp * 0.1
-            prop_b = self.b + rng.randn(*self.b.shape) * temp * 0.1
+            prop_b = self.b + rng.randn(*np.shape(self.b)) * temp * 0.1
             
             old_w, old_b = self.w, self.b
             self.w, self.b = prop_w, prop_b
